@@ -10,6 +10,7 @@
  * Latest user revision: book/chapter titles never enlarge supplemental bitmaps; use their native 24px for the entire line, rasterize outlines directly and keep title strokes equally black.
  */
 #include "ui_font.h"
+#include "fb_text_blit.h"
 #include "ui_hanzi.h"
 #include "ui_hanzi_scale.h"
 
@@ -55,6 +56,11 @@ static bool glyphs_alloc(void) {
 static size_t s_bytes;
 static uint32_t s_age;
 static uint8_t s_cover[256];
+// 界面文字同样先换算一张覆盖率表，落笔时不再逐像素做混合。
+// UI text uses a precomputed coverage table too, so blitting needs no per-pixel mix.
+static uint8_t s_ink_lut[256];
+static int s_ink_lut_fg = -1, s_ink_lut_bg = -1;
+static unsigned s_ink_lut_threshold = ~0u;
 
 static bool ready(void) {
     if (s_attempted) return s_ready;
@@ -199,6 +205,23 @@ int ui_font_text_width_px(int px, const char *text) {
     return width;
 }
 
+// 覆盖率表：threshold 非 0 时按门限二值，否则按覆盖率曲线混合；与底色相同的项不落笔。
+// Coverage table: a non-zero threshold quantizes, otherwise the coverage curve mixes. Entries that
+// land on the background paint nothing, exactly like the per-pixel version did.
+static const uint8_t *ui_ink_lut(uint8_t fg, uint8_t bg, unsigned threshold) {
+    if (s_ink_lut_fg == fg && s_ink_lut_bg == bg && s_ink_lut_threshold == threshold)
+        return s_ink_lut;
+    for (int a = 0; a < 256; ++a) {
+        uint8_t shade = threshold ? ((unsigned)a >= threshold ? fg : bg)
+                                  : (uint8_t)(bg + s_cover[a] * ((int)fg - (int)bg) / 255);
+        s_ink_lut[a] = shade == bg ? (uint8_t)FB_TEXT_SKIP : shade;
+    }
+    s_ink_lut_fg = fg;
+    s_ink_lut_bg = bg;
+    s_ink_lut_threshold = threshold;
+    return s_ink_lut;
+}
+
 static void draw_text_px(uint8_t *fb, int x, int baseline, int px,
                           const char *text, enum EpdFontFlags align,
                           uint8_t fg, uint8_t bg, unsigned threshold) {
@@ -206,18 +229,14 @@ static void draw_text_px(uint8_t *fb, int x, int baseline, int px,
     int cursor = x;
     if (align & EPD_DRAW_ALIGN_CENTER) cursor -= ui_font_text_width_px(px, text) / 2;
     else if (align & EPD_DRAW_ALIGN_RIGHT) cursor -= ui_font_text_width_px(px, text);
+    const uint8_t *lut = ui_ink_lut(fg, bg, threshold);
+    fb_text_target_t target = fb_text_target(fb);
     while (*text) {
         ui_glyph_t *g = glyph(next_cp(&text), px);
         if (!g) continue;
-        if (g->bitmap) for (int y = 0; y < g->height; ++y)
-            for (int xx = 0; xx < g->width; ++xx) {
-                uint8_t alpha = g->bitmap[y * g->width + xx];
-                if (!alpha) continue;
-                uint8_t shade = threshold ? (alpha >= threshold ? fg : bg) :
-                    (uint8_t)(bg + s_cover[alpha] * ((int)fg - (int)bg) / 255);
-                if (shade != bg) epd_draw_pixel(cursor + g->x0 + xx, baseline + g->y0 + y,
-                                                 shade << 4, fb);
-            }
+        if (g->bitmap)
+            fb_text_glyph(&target, cursor + g->x0, baseline + g->y0,
+                          g->bitmap, g->width, g->height, lut);
         cursor += g->advance;
     }
 }

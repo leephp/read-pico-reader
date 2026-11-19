@@ -19,6 +19,7 @@
  */
 
 #include "ttf_font.h"
+#include "fb_text_blit.h"
 #include "text_glue.h"
 #include "../kiiko_board_config.h"
 #include "ttf_stroke_filter.h"
@@ -2059,6 +2060,12 @@ static int reader_missing_advance(uint32_t cp,int px) {
 static uint8_t s_cover[256];
 static float s_cover_gamma = TTF_COVER_GAMMA;
 static bool s_cover_ready;
+// 覆盖率→半字节查表的缓存；颜色、抗锯齿或覆盖率曲线变化时失效。
+// Cached coverage→nibble table; invalidated when colours, AA or the coverage curve change.
+static uint8_t s_ink_lut[256];
+static int s_ink_lut_fg = -1, s_ink_lut_bg = -1;
+static bool s_ink_lut_aa;
+static bool s_ink_lut_valid;
 static void ttf_cover_lut_init(void);
 static void ttf_cover_lut_rebuild(void);
 #if KIIKO_BOARD_METALIO47
@@ -3049,7 +3056,7 @@ int ttf_text_left_bearing_px(int pixel_height, const char* text) {
 // Linear AA mid-grays look bright on this panel, so coverage is raised by TTF_COVER_GAMMA.
 // User2026-11-12: gamma is runtime-tunable for live debug comparison; default stays TTF_COVER_GAMMA.
 static bool s_antialias = true;
-void ttf_set_antialias(bool enabled) { s_antialias = enabled; }
+void ttf_set_antialias(bool enabled) { s_antialias = enabled; s_ink_lut_valid = false; }
 bool ttf_get_antialias(void) { return s_antialias; }
 
 #if KIIKO_BOARD_METALIO47 && defined(ESP_PLATFORM)
@@ -3105,6 +3112,7 @@ static void ttf_cover_lut_rebuild(void) {
 #if KIIKO_BOARD_METALIO47 && defined(ESP_PLATFORM)
     reader_gray_rebuild();
 #endif
+    s_ink_lut_valid = false;
     s_cover_ready = true;
 }
 
@@ -3122,34 +3130,52 @@ static uint8_t mix_ink(uint8_t alpha, uint8_t fg, uint8_t bg) {
     return mix_ink_aa(alpha, fg, bg, s_antialias);
 }
 
+// 一次绘制只建一张覆盖率表：256 项换算替代每个墨点的除法。
+// Build the coverage table once per ink pair: 256 conversions instead of one division per ink pixel.
+static const uint8_t *ink_lut(uint8_t fg, uint8_t bg, bool antialias) {
+    if (s_ink_lut_valid && fg == s_ink_lut_fg && bg == s_ink_lut_bg && antialias == s_ink_lut_aa)
+        return s_ink_lut;
+    for (int a = 0; a < 256; ++a)
+        s_ink_lut[a] = a == 0 ? (uint8_t)FB_TEXT_SKIP : mix_ink_aa((uint8_t)a, fg, bg, antialias);
+    s_ink_lut_fg = fg;
+    s_ink_lut_bg = bg;
+    s_ink_lut_aa = antialias;
+    s_ink_lut_valid = true;
+    return s_ink_lut;
+}
+
 // 正立落字形：pen_x 是字身框左边缘，baseline 是框内基线。
 // Blit an upright glyph: pen_x is the em box's left edge and baseline its baseline inside it.
 static void blit_upright(uint8_t* framebuffer, int pen_x, int baseline,
                          const glyph_entry_t* glyph, uint8_t fg, uint8_t bg, bool antialias) {
     if (glyph->bitmap == NULL) return;
+    const int left = pen_x + glyph->left;
+    const int top = baseline - glyph->top;
 #if KIIKO_BOARD_METALIO47 && defined(ESP_PLATFORM)
     const bool reader_gray = s_reader_body_aa && antialias && fg == 0 && bg == 15;
     if (reader_gray && epd_get_rotation() == EPD_ROT_INVERTED_PORTRAIT) {
-        blit_reader_portrait(framebuffer, pen_x + glyph->left, baseline - glyph->top, glyph);
+        blit_reader_portrait(framebuffer, left, top, glyph);
+        return;
+    }
+    if (reader_gray) {
+        // 其它旋转保留逐点抖动，只在竖排走上面的整列快路径。
+        // Other rotations keep the per-pixel dither; only the portrait one takes the column path above.
+        for (int gy = 0; gy < glyph->height; gy++) {
+            int yy = top + gy;
+            for (int gx = 0; gx < glyph->width; gx++) {
+                uint8_t alpha = glyph->bitmap[gy * glyph->width + gx];
+                if (alpha == 0) continue;
+                int xx = left + gx;
+                uint8_t gray = reader_gray_at(alpha, xx, yy);
+                if (gray != 15) epd_draw_pixel(xx, yy, gray << 4, framebuffer);
+            }
+        }
         return;
     }
 #endif
-    for (int gy = 0; gy < glyph->height; gy++) {
-        int yy = baseline - glyph->top + gy;
-        for (int gx = 0; gx < glyph->width; gx++) {
-            uint8_t alpha = glyph->bitmap[gy * glyph->width + gx];
-            if (alpha == 0) continue;
-#if KIIKO_BOARD_METALIO47 && defined(ESP_PLATFORM)
-            if (reader_gray) {
-                int xx = pen_x + glyph->left + gx;
-                uint8_t gray = reader_gray_at(alpha, xx, yy);
-                if (gray != 15) epd_draw_pixel(xx, yy, gray << 4, framebuffer);
-                continue;
-            }
-#endif
-            epd_draw_pixel(pen_x + glyph->left + gx, yy, mix_ink_aa(alpha, fg, bg, antialias) << 4, framebuffer);
-        }
-    }
+    fb_text_target_t target = fb_text_target(framebuffer);
+    fb_text_glyph(&target, left, top, glyph->bitmap, glyph->width, glyph->height,
+                  ink_lut(fg, bg, antialias));
 }
 
 void ttf_draw_text(
