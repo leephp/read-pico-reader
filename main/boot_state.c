@@ -113,10 +113,18 @@ static bool unpack_record(const uint8_t *data,size_t size,boot_record_t *record)
     }
     return at==size&&resume_valid(&record->resume)&&path_valid(record->opening,true)&&path_valid(record->blocked,true);
 }
+// 最近一次确认落盘的字节；与待写内容完全一致时不再开 NVS 会话，省一次擦写。
+// Last confirmed on-flash bytes; identical content skips the NVS session and its page erase.
+static uint8_t s_persisted[BOOT_PACKED_MAX];
+static size_t s_persisted_size;
+static bool s_persisted_valid;
+
 static esp_err_t store(void) {
     s_record.checksum = checksum(&s_record);
     uint8_t packed[BOOT_PACKED_MAX];size_t size=pack_record(packed);
     if(!size)return ESP_ERR_INVALID_STATE;
+    if (s_persisted_valid && s_persisted_size == size && !memcmp(packed, s_persisted, size))
+        return ESP_OK;
     nvs_handle_t h;
     esp_err_t err = nvs_open(KIIKO_BOARD_STARTUP_NAMESPACE, NVS_READWRITE, &h);
     s_writable=err==ESP_OK;
@@ -134,7 +142,14 @@ static esp_err_t store(void) {
     }
     if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
-    if (err != ESP_OK) ESP_LOGW("boot_state", "checkpoint: %s", esp_err_to_name(err));
+    if (err != ESP_OK) {
+        s_persisted_valid = false;
+        ESP_LOGW("boot_state", "checkpoint: %s", esp_err_to_name(err));
+    } else {
+        memcpy(s_persisted, packed, size);
+        s_persisted_size = size;
+        s_persisted_valid = true;
+    }
     return err;
 }
 void pico_boot_init(bool abnormal_reset) {
@@ -168,6 +183,12 @@ void pico_boot_init(bool abnormal_reset) {
                 s_recovery_reasons |= BOOT_RECOVERY_RECORD;
             }
             memset(&s_record, 0, sizeof(s_record));
+        } else if (size <= sizeof(s_persisted)) {
+            // 记住已在闪存里的字节，随后同内容的重写可以直接跳过。
+            // Remember what is already on flash so an identical rewrite can be skipped.
+            memcpy(s_persisted, data, size);
+            s_persisted_size = size;
+            s_persisted_valid = true;
         }
 #if KIIKO_BOARD_METALIO47
         // 真实锁屏记录独立于字体/开书保护；看门狗不能把锁定当作普通首页启动。
