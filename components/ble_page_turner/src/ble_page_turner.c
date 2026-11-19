@@ -190,7 +190,9 @@ static char s_failure[128];
 // the start-failure text.
 static uint32_t s_retry_after_ms;
 static uint32_t s_stable_since;
-static char s_start_failure[160];
+// 最长一句是"启动失败 N 次：<原因>（关掉再开启可重试）"，原因本身可达 117 字节，160 不够写。
+// The longest line is the retry notice with a cause of up to 117 bytes; 160 truncates it.
+static char s_start_failure[192];
 // 自动重连：链路曾经建立过才记这里；用户主动断开时清空，免得"关掉"之后又被自己连回来。
 // Auto-reconnect: recorded once a link has been up. Cleared on an explicit disconnect, so
 // switching it off is not immediately undone by the retry.

@@ -379,8 +379,11 @@ endif()
 if(NOT KIIKO_BOARD_METALIO47)
     # Keep recovery and storage compatible with the existing 4 MiB application slots.
     # Size-optimize settings/shelf journals and file/transfer screens; retain renderer/decoder loops.
+    # 冷路径（设置、OTA、锁屏、壁纸、工厂页、封面索引）一律按体积编译；排版与字形仍走 PERF。
+    # Cold paths (settings, OTA, lock screen, wallpaper, factory pages, cover index) compile for size;
+    # layout and glyph paths keep PERF.
     foreach(source IN LISTS kiiko_selected_sources)
-        if(source MATCHES "(^|/)(settings|book/book_added|apps/app_(device_settings|files|transfer|onboarding))[.]c$")
+        if(source MATCHES "(^|/)(settings|lock_screen|factory_reset|ota_(update|online|release)|ui/ui_(wallpaper|avatar|home_widget|home_clock|online_fonts)|apps/(app_(device_settings|files|transfer|onboarding|dashboard|cloud_sync|image)|file_search|usb_storage)|factory/(pmu_selftest|vcom_setup)|book/(book_added|book_weread_cover|book_lock_collage|book_history_backup|book_index_cache|book_title))[.]c$")
             set_property(SOURCE "${source}" APPEND PROPERTY COMPILE_OPTIONS "-Os")
         endif()
     endforeach()
