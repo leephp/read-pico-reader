@@ -142,15 +142,22 @@ static void evict(ui_glyph_t *g) {
     memset(g, 0, sizeof(*g));
 }
 
-static ui_glyph_t *glyph(uint32_t cp, int px) {
-    if (!ready()) return NULL;
-    if (!glyphs_alloc()) return NULL;
-    px = clamp_px(px);
+static ui_glyph_t *glyph_find(uint32_t cp, int px) {
+    if (!s_glyphs) return NULL;
     for (int i = 0; i < UI_GLYPH_SLOTS; ++i)
         if (s_glyphs[i].used && s_glyphs[i].cp == cp && s_glyphs[i].px == px) {
             s_glyphs[i].age = ++s_age;
             return &s_glyphs[i];
         }
+    return NULL;
+}
+
+static ui_glyph_t *glyph(uint32_t cp, int px) {
+    if (!ready()) return NULL;
+    px = clamp_px(px);
+    ui_glyph_t *hit = glyph_find(cp, px);
+    if (hit) return hit;
+    if (!glyphs_alloc()) return NULL;
     int slot = 0;
     for (int i = 0; i < UI_GLYPH_SLOTS; ++i)
         if (!s_glyphs[i].used || s_glyphs[i].age < s_glyphs[slot].age) slot = i;
@@ -195,13 +202,25 @@ static ui_glyph_t *glyph(uint32_t cp, int px) {
     return g;
 }
 
+// 只量前进宽度：命中缓存直接取，未命中按与绘制完全相同的公式算，不分配也不光栅化。
+// Measure the advance only: cache hits read it, misses use the same formula as drawing,
+// without allocating or rasterizing a bitmap the caller may never paint.
+static int ui_advance(uint32_t cp, int px) {
+    px = clamp_px(px);
+    ui_glyph_t *cached = glyph_find(cp, px);
+    if (cached) return cached->advance;
+    int advance = 0, left = 0;
+    stbtt_GetCodepointHMetrics(&s_font, (int)cp, &advance, &left);
+    uint8_t extra[UI_HANZI_RECORD];
+    if (!stbtt_FindGlyphIndex(&s_font, (int)cp) && ui_hanzi_get(cp, extra))
+        return (extra[4] * px + UI_HANZI_BASE_PX / 2) / UI_HANZI_BASE_PX;
+    return (int)lroundf(advance * scale_for(px));
+}
+
 int ui_font_text_width_px(int px, const char *text) {
     if (!text || !ready()) return 0;
     int width = 0;
-    while (*text) {
-        ui_glyph_t *g = glyph(next_cp(&text), px);
-        if (g) width += g->advance;
-    }
+    while (*text) width += ui_advance(next_cp(&text), px);
     return width;
 }
 

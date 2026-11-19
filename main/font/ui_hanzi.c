@@ -12,13 +12,31 @@ extern const uint8_t ui_hanzi_end[] asm("_binary_ui_hanzi_bin_end");
 #define BLOCK 32u
 static ui_hanzi_cache_t s_ui_cache;
 static uint32_t word(const uint8_t *p) { return p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24; }
-static size_t record_size(void) {return !memcmp(ui_hanzi_start,"PIF4",4)?UI_HANZI_AA_RECORD:UI_HANZI_RECORD;}
-static int index_for(uint32_t cp) {
+// 表头在 .rodata 里不会变：只校验一次，之后每次查字都跳过 magic/长度检查。
+// The header lives in .rodata and never changes: validate once instead of on every lookup.
+static struct {
+    bool checked, valid;
+    size_t count, blocks, record;
+} s_header;
+static void header_parse(void) {
+    if (s_header.checked) return;
+    s_header.checked = true;
     size_t bytes = ui_hanzi_end - ui_hanzi_start;
-    if (cp > 0xffff || bytes < 16 || (memcmp(ui_hanzi_start, "PIF1", 4)&&memcmp(ui_hanzi_start,"PIF4",4))) return -1;
-    size_t count = word(ui_hanzi_start + 4), blocks = (count + BLOCK - 1) / BLOCK;
+    s_header.record = !memcmp(ui_hanzi_start, "PIF4", 4) ? UI_HANZI_AA_RECORD : UI_HANZI_RECORD;
+    if (bytes < 16 || (memcmp(ui_hanzi_start, "PIF1", 4) && memcmp(ui_hanzi_start, "PIF4", 4))) return;
+    size_t count = word(ui_hanzi_start + 4);
+    size_t blocks = (count + BLOCK - 1) / BLOCK;
     if (count > 6763 || word(ui_hanzi_start + 8) != UI_HANZI_BASE_PX || word(ui_hanzi_start + 12) != BLOCK ||
-        16 + count * 2 + (blocks + 1) * 4 > bytes) return -1;
+        16 + count * 2 + (blocks + 1) * 4 > bytes) return;
+    s_header.valid = true;
+    s_header.count = count;
+    s_header.blocks = blocks;
+}
+static size_t record_size(void) { header_parse(); return s_header.record; }
+static int index_for(uint32_t cp) {
+    header_parse();
+    if (cp > 0xffff || !s_header.valid) return -1;
+    size_t count = s_header.count;
     size_t low = 0, high = count;
     const uint8_t *chars = ui_hanzi_start + 16;
     while (low < high) {
@@ -38,7 +56,8 @@ static const uint8_t *decode_record(ui_hanzi_cache_t *cache,uint32_t cp) {
     if (!cache->inflate) cache->inflate = heap_caps_malloc(sizeof(tinfl_decompressor), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!cache->block || !cache->inflate) return false;
     if (!cache->valid || cache->cached != block) {
-        size_t count = word(ui_hanzi_start + 4), blocks = (count + BLOCK - 1) / BLOCK;
+        header_parse();
+        size_t count = s_header.count, blocks = s_header.blocks;
         const uint8_t *offsets = ui_hanzi_start + 16 + count * 2;
         const uint8_t *data = offsets + (blocks + 1) * 4;
         size_t start = word(offsets + block * 4), end = word(offsets + (block + 1) * 4);
