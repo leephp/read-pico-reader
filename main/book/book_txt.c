@@ -823,7 +823,17 @@ esp_err_t book_txt_load_target(book_txt_t *b, size_t i, size_t source_offset,
     if(source_offset!=SIZE_MAX && source_offset>end-base)return ESP_ERR_INVALID_ARG;
     uint32_t target=source_offset==SIZE_MAX?UINT32_MAX:base+(uint32_t)source_offset;
     if (!start) start = b->bom;
-    size_t cap = (size_t)(end - start) * 3 + 1;
+    // 按编码取初始容量：UTF-8 一比一，GBK 约 1.5×，UTF-16 最多 2×；真遇到坏字节再按需增长到 3×。
+    // Size the buffer by encoding: UTF-8 is 1:1, GBK ~1.5x, UTF-16 at most 2x. Malformed input grows on
+    // demand up to 3x, so a 96 KiB segment no longer always reserves 288 KiB.
+    const size_t span = (size_t)(end - start);
+    const size_t max_cap = span * 3 + 1;
+    size_t cap = span + 1;
+#if KIIKO_BOARD_METALIO47
+    if (b->utf16) cap = span * 2 + 1;
+#endif
+    if (b->gbk) cap = span + span / 2 + 1;
+    if (cap > max_cap) cap = max_cap;
     char *out = heap_caps_malloc(cap, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     reader_t *r = heap_caps_malloc(sizeof(*r), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!out || !r) { free(out); free(r); return ESP_ERR_NO_MEM; }
@@ -841,7 +851,14 @@ esp_err_t book_txt_load_target(book_txt_t *b, size_t i, size_t source_offset,
         if(!next(r,&cp))break;
         char bytes[4]; size_t n = encode(cp, bytes);
         // 文件被外部改写时拒绝越过已索引边界。/ Reject crossing indexed bounds if the file changed externally.
-        if (r->offset > end || n >= cap - used) { err = ESP_ERR_INVALID_SIZE; break; }
+        if (r->offset > end) { err = ESP_ERR_INVALID_SIZE; break; }
+        if (n >= cap - used) {
+            size_t grown_cap = cap * 2 > max_cap ? max_cap : cap * 2;
+            if (grown_cap <= used + n) { err = ESP_ERR_INVALID_SIZE; break; }
+            char *grown = heap_caps_realloc(out, grown_cap, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (!grown) { err = ESP_ERR_NO_MEM; break; }
+            out = grown; cap = grown_cap;
+        }
         memcpy(out + used, bytes, n); used += n;
     }
     if (ferror(b->file) || r->offset != end) err = ESP_FAIL;
