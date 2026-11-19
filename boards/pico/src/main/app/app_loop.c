@@ -790,6 +790,22 @@ void app_loop_run(const app_loop_config_t* config) {
             ESP_LOGE(TAG, "CST836U read failed: %s", esp_err_to_name(err));
             memset(&touch, 0, sizeof(touch));
         }
+#ifdef KIIKO_LOCAL_LATENCY
+        // 本地测时构建：对照 INT 电平与触摸状态，确认中断极性后再决定能否按 INT 轮询。
+        // Local timing builds only: log the INT level next to the touch state to settle its polarity.
+        {
+            static int64_t int_log_ms;
+            static int last_int = -1;
+            const int64_t now_ms = esp_timer_get_time() / 1000;
+            const int level = cst836u_int_level(config->tp);
+            if (level != last_int || now_ms - int_log_ms >= 200) {
+                int_log_ms = now_ms;
+                last_int = level;
+                ESP_LOGI(TAG, "touch int=%d touched=%d count=%u", level,
+                         touch.touched ? 1 : 0, (unsigned)touch.count);
+            }
+        }
+#endif
 
         if(err!=ESP_OK||!touch.touched)s_nav_contact_down=s_nav_polled=false;
         const bool pressed = touch.touched && !was_touched;
