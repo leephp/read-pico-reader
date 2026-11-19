@@ -1,4 +1,4 @@
-Pico Mac 模拟器 · 0.2 · kiikoread 0.3.3-rc97
+Pico Mac 模拟器 · 0.2 · kiikoread 当前源码
 
 打开
 双击 Pico Simulator.app 或“打开 Pico 模拟器.command”。

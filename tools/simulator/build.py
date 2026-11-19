@@ -1,9 +1,25 @@
 from pathlib import Path
 import subprocess, json, runpy, os
-r=Path(__file__).resolve().parent;f=Path(os.environ.get('PICO_SIM_FIRMWARE',r/'firmware'));out=r/'build';out.mkdir(exist_ok=True)
-sources=['SEARCH','apps/app_image.c','apps/app_dashboard.c','apps/app_book.c','apps/book_toc.c','apps/app_files.c','apps/file_tree.c','apps/app_device_settings.c','app/app_registry.c','settings.c','lock_pin_flow.c','lock_pin.c','ui/datamatrix.c','ui/ui_reader_background.c','ui/ui_kit.c','ui/ui_nav.c','ui/ui_gesture.c','ui/ui_quick_menu.c','ui/ui_quick_menu_input.c','ui/ui_click_feedback.c','ui/ui_pinpad.c','ui/ui_acrylic.c','ui/ui_glass.c','ui/ui_wallpaper.c','ui/ui_image_dither.c','ui/ui_text_edit.c','ui/ui_text_input.c','ui/ui_keyboard.c','ui/ui_ime.c','font/ttf_font.c','font/ui_font.c','font/ui_hanzi.c','font/app_font_context.c','book/book_store.c','book/book_progress.c','book/book_history_backup.c','book/book_title.c','book/book_ticket.c','book/book_lock_collage.c','book/book_source.c','book/book_index_cache.c','book/book_txt.c','book/gbk.c','book/book_epub.c','book/book_image_header.c','book/book_cover_auto.c','book/zip_reader.c','book/html_text.c','book/book_layout.c','book/book_cover_jobs.c','book/book_lock_bookmark.c','book/book_excerpt.c','ui/ui_avatar.c','ui/ui_home_clock.c','ui/ui_home_widget.c']
+r=Path(__file__).resolve().parent
+# 默认编当前工作树；rc97 快照（firmware/）存在时仍可复现当时发布版。
+# Default to the working tree; a legacy rc97 snapshot under firmware/ still reproduces that release.
+_env=os.environ.get('PICO_SIM_FIRMWARE')
+f=Path(_env) if _env else ((r/'firmware') if (r/'firmware').exists() else r.parents[1])
+out=r/'build';out.mkdir(exist_ok=True)
+# 维护源码是单棵树 + boards/<board>/src 覆盖；与设备构建一样先materialize指定板型的视图。
+# The maintained tree is one source plus boards/<board>/src overlays; materialize the board view like the device build.
+if (f/'boards'/'pico'/'src').exists() and not (f/'.kiiko-source-view.json').exists():
+ import sys
+ sys.path.insert(0,str(r.parent))
+ from board_source_view import materialize
+ f=materialize(f,f/'build'/'sim-view-pico','pico')
+ # prepare_host.py 与各编译步骤都按这个变量解析固件根；指向视图而不是维护树。
+ # prepare_host.py and every compile step resolve the firmware root through this variable; point it at the view.
+ os.environ['PICO_SIM_FIRMWARE']=str(f)
+sources=['SEARCH','apps/app_image.c','apps/app_dashboard.c','apps/app_book.c','apps/book_toc.c','apps/app_files.c','apps/file_tree.c','apps/app_device_settings.c','app/app_registry.c','settings.c','lock_pin_flow.c','lock_pin.c','ui/datamatrix.c','ui/ui_reader_background.c','ui/ui_kit.c','ui/ui_nav.c','ui/ui_gesture.c','ui/ui_quick_menu.c','ui/ui_quick_menu_input.c','ui/ui_click_feedback.c','ui/ui_pinpad.c','ui/ui_acrylic.c','ui/ui_glass.c','ui/ui_wallpaper.c','ui/ui_image_dither.c','ui/ui_text_edit.c','ui/ui_text_input.c','ui/ui_keyboard.c','ui/ui_ime.c','font/ttf_font.c','font/ui_font.c','font/ui_hanzi.c','font/app_font_context.c','book/book_store.c','book/book_progress.c','book/book_history_backup.c','book/book_title.c','book/book_ticket.c','book/book_lock_collage.c','book/book_source.c','book/book_index_cache.c','book/book_txt.c','book/gbk.c','book/book_epub.c','book/book_image_header.c','book/book_cover_auto.c','book/zip_reader.c','book/html_text.c','book/book_layout.c','book/book_cover_jobs.c','book/book_lock_bookmark.c','book/book_excerpt.c','ui/ui_avatar.c','ui/ui_home_clock.c','ui/ui_home_widget.c',
+ 'apps/file_search.c','book/book_added.c','book/book_shelf_page_cache.c']
 incs=[r/'shim',f/'main']+[f/'main'/d for d in ['app','apps','ui','font','book','factory']]+list((f/'components').glob('*/include'))
-flags=['-std=gnu11','-O1','-g','-fno-common','-Wno-format','-Wno-unused-value','-Wno-deprecated-declarations','-Wno-incompatible-pointer-types','-include',str(r/'shim/host.h')]+[str(x) for p in incs for x in ['-I',p]]
+flags=['-std=gnu11','-O1','-g','-fno-common','-Wno-format','-Wno-unused-value','-Wno-deprecated-declarations','-Wno-incompatible-pointer-types','-include',str(r/'shim/host.h'),'-include',str(r/'src/sim_stubs.h'),'-DKIIKO_BOARD_METALIO47=0']+[str(x) for p in incs for x in ['-I',p]]
 # Use the released shelf layout without experimental overrides.
 runpy.run_path(str(r/'src/prepare_host.py'))
 failed=[];objs=[]
@@ -22,7 +38,7 @@ for name,err in failed:
  lines=err.splitlines(); first=next((x for x in lines if 'error:' in x),'');print(name,first)
 if not failed and (r/'src/engine.c').exists():
  pass # Release Home is compiled directly.
- for name in ['platform.c','engine.c','services.c','cover.m','pin.c']:
+ for name in ['platform.c','engine.c','services.c','cover.m','pin.c','sim_stubs.c']:
   source=r/'src'/name
   if source.exists():
    obj=out/(name+'.o');extra=['-DSIM_PLATFORM=1'] if name in ['platform.c','cover.m'] else [];subprocess.run(['cc',*flags,*extra,'-c',str(source),'-o',str(obj)],check=True);objs.append(str(obj))

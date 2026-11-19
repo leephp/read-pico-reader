@@ -13,6 +13,11 @@
 #include "esp_timer.h"
 #include "ff.h"
 #include "ble_page_turner.h"
+#include "book_cover.h"
+#include "book_weread_cover.h"
+#include "app_transfer_mode.h"
+#include "continuous_du.h"
+#include "kiiko_device_sync.h"
 #include "ota_online.h"
 #include "ota_update.h"
 #include "app.h"
@@ -47,7 +52,7 @@ void display_main_transition_disarm(void){}
 enum EpdDrawError update_display_area_with(EpdiyHighlevelState*h,const EpdWaveform*w,enum EpdDrawMode m,EpdRect a){return 0;}
 enum EpdDrawError update_display_area_diff_with(EpdiyHighlevelState*h,const EpdWaveform*w,enum EpdDrawMode m,EpdRect a){return 0;}
 enum EpdDrawError update_display_area_full_with(EpdiyHighlevelState*h,const EpdWaveform*w,enum EpdDrawMode m,EpdRect a){return 0;}
-const esp_app_desc_t *esp_app_get_description(void){static esp_app_desc_t a={.version="0.3.3-rc97",.project_name="Pico",.date="2026-10-12",.idf_ver="Mac simulator"};return &a;}
+const esp_app_desc_t *esp_app_get_description(void){static esp_app_desc_t a={.version=SIM_FIRMWARE_VERSION,.project_name="Pico",.date="2026-10-12",.idf_ver="Mac simulator"};return &a;}
 bool pico_boot_asset_allowed(const char*p){return true;}
 bool pico_boot_recovery(void){return false;}
 void pico_boot_book_end(bool ok){}
@@ -85,7 +90,7 @@ static bool checked;
 int pico_online_check(void){checked=true;return ESP_ERR_NOT_SUPPORTED;}int pico_online_download(void){return ESP_ERR_NOT_SUPPORTED;}int pico_online_commit(void){return ESP_ERR_NOT_SUPPORTED;}
 bool pico_online_busy(void){return false;}void pico_online_cancel_join(void){}
 void pico_online_get_status(pico_update_status_t*s){memset(s,0,sizeof(*s));s->state=checked?PICO_UPDATE_FAILED:PICO_UPDATE_IDLE;snprintf(s->message,sizeof(s->message),"模拟器尚未接入联网升级");}
-int pico_ota_inspect(const char*p,pico_ota_info_t*i){memset(i,0,sizeof(*i));snprintf(i->current_version,sizeof(i->current_version),"0.3.3-rc97");snprintf(i->message,sizeof(i->message),"模拟器暂不运行设备BIN");return ESP_ERR_NOT_SUPPORTED;}
+int pico_ota_inspect(const char*p,pico_ota_info_t*i){memset(i,0,sizeof(*i));snprintf(i->current_version,sizeof(i->current_version),"%s",SIM_FIRMWARE_VERSION);snprintf(i->message,sizeof(i->message),"模拟器暂不运行设备BIN");return ESP_ERR_NOT_SUPPORTED;}
 int pico_ota_install(const char*p,char*m,size_t n){snprintf(m,n,"请在真实Pico设备上升级");return ESP_ERR_NOT_SUPPORTED;}
 void ble_pt_reset_failure(void){}int ble_pt_stop(uint32_t n){return 0;}bool ble_pt_running(void){return false;}
 bool ble_pt_take_start_failure(char*out,size_t n){return false;}
@@ -103,6 +108,52 @@ static void transfer_render(app_ctx_t*c,uint8_t*f){ui_clear_page(f);ui_nav_statu
 static app_redraw_t transfer_key(app_ctx_t*c,int k){c->request_return=true;return APP_REDRAW_PAGE;}
 const app_desc_t app_transfer={.title="文件传输",.render=transfer_render,.on_key=transfer_key};
 void app_transfer_request_hotspot_start(void){}void app_transfer_request_usb_start(void){}void app_transfer_request_wifi_setup(void){}void app_transfer_request_wifi_upload(void){}
+void app_transfer_request_cover_wifi(void){}
+static void sync_render(app_ctx_t*c,uint8_t*f){ui_clear_page(f);ui_nav_status(f);ui_draw_header(f,"云同步","设备间同步");ui_text(f,342,430,30,"Mac 模拟器不执行设备间同步",EPD_DRAW_ALIGN_CENTER,false);ui_nav_draw(f,2);}
+const app_desc_t app_cloud_sync={.title="云同步",.render=sync_render};
+esp_err_t app_factory_reset(void){return ESP_ERR_NOT_SUPPORTED;}
+
+/* 设备间同步需要双机射频；宿主给空状态。/ Device sync needs two radios; the host reports idle. */
+esp_err_t kiiko_sync_start(kiiko_sync_role_t role,const kiiko_sync_io_t*io){(void)role;(void)io;return ESP_ERR_NOT_SUPPORTED;}
+void kiiko_sync_confirm(void){}
+void kiiko_sync_cancel(void){}
+void kiiko_sync_stop(void){}
+bool kiiko_sync_active(void){return false;}
+void kiiko_sync_get_status(kiiko_sync_status_t*out){if(out)memset(out,0,sizeof(*out));}
+
+void ble_pt_cancel_recent(void){}
+void ble_pt_reconnect_recent(void){}
+
+/* 波形派生表在宿主没有物理面板；返回保守的常量表。 */
+/* Derived panel tables have no physical panel on the host; return the conservative table. */
+const EpdWaveform *display_main_fast_white_waveform(const EpdWaveform*source,enum EpdDrawMode mode){(void)mode;return source?source:&E0470_WAVEFORM;}
+const EpdWaveform *display_reader_soft_turn_waveform(void){return &E0470_WAVEFORM;}
+const EpdWaveform *display_reader_white_push_waveform(void){return &E0470_WAVEFORM;}
+const EpdWaveform *display_settings_motion_waveform(void){return &E0470_WAVEFORM;}
+const EpdWaveform *display_settings_scroll_waveform(void){return &E0470_WAVEFORM;}
+enum EpdDrawError update_display_click_feedback(EpdiyHighlevelState*h,EpdRect a){(void)h;(void)a;return 0;}
+enum EpdDrawError update_display_reader_area(EpdiyHighlevelState*h,const EpdWaveform*w,enum EpdDrawMode m,EpdRect a,bool full){(void)h;(void)w;(void)m;(void)a;(void)full;return 0;}
+enum EpdDrawError update_display_text_turn(EpdiyHighlevelState*h,EpdRect a,e0470_turn_dir_t d){(void)h;(void)a;(void)d;return 0;}
+
+bool read_pico_sd_io_ready(void){return true;}
+esp_err_t read_pico_sd_start_space_refresh(void){return ESP_OK;}
+esp_err_t read_pico_transfer_start(const read_pico_transfer_cfg_t*cfg){(void)cfg;return ESP_ERR_NOT_SUPPORTED;}
+void read_pico_transfer_stop(void){}
+bool read_pico_transfer_try_stop_if_idle(void){return true;}
+
+void continuous_du_reset(void){}
+void metalio_cover_cache_clear(void){}
+void metalio_cover_cache_trim(size_t budget){(void)budget;}
+
+/* 缩放/图层封面走宿主 ImageIO 的整图路径；这些流式接口在模拟器里一律未命中。 */
+/* Scaled/layered covers use whole-image ImageIO on the host; the streaming hooks always miss. */
+int book_cover_load_sized_io(const char*path,const char*title,const char*author,uint8_t*out,unsigned width,unsigned height,bool*auto_cache){(void)path;(void)title;(void)author;(void)out;(void)width;(void)height;if(auto_cache)*auto_cache=false;return -1;}
+bool book_cover_shelf_ram_read(const char*path,const char*title,const char*author,uint64_t size,int64_t modified,bool list,bool fast,book_fast_cover_key_t raster,void*out,size_t capacity,metalio_cover_meta_t*meta){(void)path;(void)title;(void)author;(void)size;(void)modified;(void)list;(void)fast;(void)raster;(void)out;(void)capacity;if(meta)memset(meta,0,sizeof(*meta));return false;}
+void book_cover_shelf_ram_store(const char*path,const char*title,const char*author,uint64_t size,int64_t modified,uint64_t font_key,bool list,bool fast,book_fast_cover_key_t raster,const uint8_t*pixels,bool white_edge){(void)path;(void)title;(void)author;(void)size;(void)modified;(void)font_key;(void)list;(void)fast;(void)raster;(void)pixels;(void)white_edge;}
+bool book_cover_shelf_no_artwork(const char*path,const char*title,const char*author,uint64_t size,int64_t modified,bool remember){(void)path;(void)title;(void)author;(void)size;(void)modified;(void)remember;return false;}
+bool book_image_file_xth_grayscale(const char*path,unsigned width,unsigned height,uint8_t*out){(void)path;(void)width;(void)height;(void)out;return false;}
+bool book_image_xth_dimensions(const char*path,unsigned*width,unsigned*height){(void)path;(void)width;(void)height;return false;}
+bool book_png_file_layer_rows(const char*path,unsigned width,unsigned height,bool(*sink)(void*,unsigned,unsigned,const uint8_t*,const uint8_t*),void*context){(void)path;(void)width;(void)height;(void)sink;(void)context;return false;}
 enum EpdDrawError update_display_image_gray(EpdiyHighlevelState*h){return 0;}
 
 void ble_pt_learn_begin(void){}
@@ -114,3 +165,18 @@ void rp_boot_mark(const char*n){}
 const EpdWaveform *display_main_bw_waveform(void){return &E0470_WAVEFORM;}
 const EpdWaveform *display_main_gray_waveform(void){return &E0470_WAVEFORM;}
 const EpdWaveform *display_main_normal_waveform(void){return &E0470_WAVEFORM;}
+
+/* 微信读书封面下载需要 cJSON 与真实网络；模拟器按“没有下载封面”处理。 */
+/* WeRead cover download needs cJSON and a real network; the simulator always reports "no cover". */
+bool book_weread_cover_is_txt(const char*p){(void)p;return false;}
+bool book_weread_cover_metadata(const char*p,char*t,size_t tc,char*a,size_t ac){(void)p;(void)t;(void)tc;(void)a;(void)ac;return false;}
+uint64_t book_weread_cover_stamp(const char*p){(void)p;return 0;}
+bool book_weread_cover_read(const char*p,uint8_t*out,unsigned w,unsigned h){(void)p;(void)out;(void)w;(void)h;return false;}
+esp_err_t book_weread_cover_start(book_weread_path_t*paths,unsigned count){(void)paths;(void)count;return ESP_ERR_NOT_SUPPORTED;}
+void book_weread_cover_cancel(void){}
+book_weread_cover_status_t book_weread_cover_status(void){return (book_weread_cover_status_t){0};}
+unsigned book_weread_cover_revision(void){return 0;}
+book_weread_cover_row_t book_weread_cover_row(unsigned row){(void)row;return (book_weread_cover_row_t){.state=BOOK_WEREAD_NOT_FOUND};}
+void book_weread_cover_focus(unsigned row){(void)row;}
+bool book_weread_cover_option(unsigned row,unsigned option,book_weread_cover_option_t*out,uint8_t*preview){(void)row;(void)option;(void)preview;if(out)memset(out,0,sizeof(*out));return false;}
+bool book_weread_cover_choose(unsigned row,unsigned option){(void)row;(void)option;return false;}

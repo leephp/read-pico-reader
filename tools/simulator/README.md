@@ -26,9 +26,12 @@ Apple 芯片、macOS 13+，需要 Xcode Command Line Tools。在本目录执行�
 Apple Silicon, macOS 13+ and Xcode Command Line Tools:
 
 ```sh
-PICO_SIM_FIRMWARE=../.. python3 build.py
+python3 build.py      # 默认编当前工作树的 pico 视图；firmware/ 快照存在时编该快照
 python3 package.py
 ```
+
+`build.py` 先按板型 materialize 源码视图（同设备构建），再编译固件切片与宿主适配；新增固件模块或改签名后，需要同步 `sources` 与 `src/services.c` 的宿主替身。版本号以 `SIM_FIRMWARE_VERSION`（`src/sim_stubs.h`）为准。
+`build.py` materializes the pico source view first (as the device build does), then compiles the firmware slice and host adapters; new firmware modules or signature changes must be mirrored in `sources` and the stand-ins in `src/services.c`. The shown version comes from `SIM_FIRMWARE_VERSION` (`src/sim_stubs.h`).
 
 运行 Pico Simulator.app；Data/ 与 app 同目录，首次运行会创建。模拟器目录中的 prepare.py 可从 PICO_RELEASE_SOURCE 指定的同版发布源码创建不可覆盖快照。
 
