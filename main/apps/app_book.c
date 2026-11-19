@@ -6499,11 +6499,8 @@ static void scan_shelf_dir(app_ctx_t *ctx, const char *root, bool is_flash, nvs_
 #endif
         item->chapters = 0;item->chapters_checked=false;
         item->is_flash = is_flash;
-        book_progress_t p;
-        item->has_progress = book_progress_load(item->path, item->size, &p);
-        item->pct = item->has_progress ? p.pct : 0;
-        item->chapter = item->has_progress ? p.chapter : 0;
-        item->recent = item->has_progress ? p.last_open_s : 0;
+        // 进度由 shelf_progress_load 统一批量补齐，目录遍历里不再逐本开会话。
+        // Progress is filled in one batch by shelf_progress_load; the walk opens no session per book.
         item->favorite = favorites && favorite_read_handle(favorites, item->path);
         s_shelf[s_count++] = candidate;
     }
@@ -6597,6 +6594,34 @@ static bool shelf_backfill_read_books(bool* truncated) {
     if (hidden) nvs_close(hidden);
     if (truncated && backfill.truncated) *truncated = true;
     return s_count != before;
+}
+
+// 每64本只打开一次只读进度库；工作区不足或会话失败仍用原逐本路径。
+// One read-only progress session per64 books; scratch/OOM/session failures retain per-book fallback.
+static bool shelf_progress_load(app_ctx_t *ctx) {
+    if (!s_count) return true;
+    book_progress_query_t *queries=heap_caps_calloc(BOOK_PROGRESS_BATCH_MAX,sizeof(*queries),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    for (int first=0;first<s_count;first+=BOOK_PROGRESS_BATCH_MAX) {
+        if (shelf_scan_interrupted(ctx)) { free(queries); return false; }
+        size_t count=(size_t)(s_count-first);if(count>BOOK_PROGRESS_BATCH_MAX)count=BOOK_PROGRESS_BATCH_MAX;
+        bool batched=false;
+        if (queries) {
+            for(size_t j=0;j<count;j++) {
+                shelf_entry_t *item=&s_shelf[first+(int)j];
+                queries[j].path=item->removed?NULL:item->path;queries[j].file_size=item->size;
+            }
+            batched=book_progress_load_batch(queries,count);
+        }
+        for(size_t j=0;j<count;j++) {
+            shelf_entry_t *item=&s_shelf[first+(int)j];if(item->removed)continue;
+            book_progress_t value={0};
+            bool found=batched?queries[j].found:book_progress_load(item->path,item->size,&value);
+            if(batched && found)value=queries[j].progress;
+            item->has_progress=found;item->pct=found?value.pct:0;
+            item->chapter=found?value.chapter:0;item->recent=found?value.last_open_s:0;
+        }
+    }
+    free(queries);return true;
 }
 
 static void shelf_added_load(void) {
@@ -6931,11 +6956,14 @@ static void scan_shelf(app_ctx_t* ctx) {
     }
     if (favorites) nvs_close(favorites);
     if (hidden) nvs_close(hidden);
+    // 书架进度一次批量补齐，避免每本书各开一次只读会话。
+    // Fill shelf progress in one batch instead of one read-only session per book.
+    const bool progress_loaded = !shelf_scan_interrupted(ctx) && shelf_progress_load(ctx);
     // 补齐书根目录之外读过的书；显式移出书架的除外。
     // Backfill books read outside the roots, minus the ones removed from the shelf.
 #if KIIKO_BOARD_METALIO47
     if (s_shelf_scan_yield_to_touch) {
-        bool interrupted = shelf_scan_interrupted(ctx) || truncated;
+        bool interrupted = !progress_loaded || shelf_scan_interrupted(ctx) || truncated;
         s_shelf_scan_yield_to_touch = false;
         if (interrupted) {
             free(s_shelf);
@@ -6956,6 +6984,7 @@ static void scan_shelf(app_ctx_t* ctx) {
     }
     else previous = NULL;
 #endif
+    if (!progress_loaded) { s_shelf_cache_valid = false; s_scan_pending = true; return; }
     (void)shelf_backfill_read_books(&truncated);
     shelf_added_load();
     shelf_categories_recount();
