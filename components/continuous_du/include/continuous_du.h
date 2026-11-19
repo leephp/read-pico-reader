@@ -61,7 +61,9 @@ int continuous_du_dark_phases(void);
 int continuous_du_light_phases(void);
 
 /// 分配每像素状态（PSRAM，epd_width()*epd_height() 字节）。重复调用是安全的。
+/// 只有真正使用连续 DU 的页面才调用；离开时必须 deinit 归还这块内存。
 /// / Allocate per-pixel state (PSRAM, epd_width()*epd_height() bytes). Repeat-safe.
+/// Only pages that actually drive continuous DU call this; deinit on exit returns the memory.
 bool continuous_du_init(void);
 void continuous_du_deinit(void);
 

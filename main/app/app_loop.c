@@ -1062,7 +1062,9 @@ void app_loop_run(const app_loop_config_t* config) {
         .acc = config->acc,
         .tp = config->tp,
         .sensor_ready = config->sensor_ready,
-        .continuous_ready = continuous_du_init(),
+        // 连续 DU 的 832KB 状态缓冲只在触摸调试页分配，见 app_touch。
+        // The 832KB continuous-DU state lives only while the touch page is open; see app_touch.
+        .continuous_ready = false,
         .touch = &latest,
         .touch_info = &touch_info,
     };

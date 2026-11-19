@@ -334,6 +334,9 @@ static void du_mark_dot(int lx, int ly, int r, int phases) {
 }
 
 static void on_enter(app_ctx_t* ctx) {
+    // 进页才分配每像素状态（约 832KB PSRAM）；分配失败退回普通跟手路径。
+    // Allocate the per-pixel state only on entry (~832KB PSRAM); OOM falls back to plain tracking.
+    ctx->continuous_ready = continuous_du_init();
     s_continuous = false;
     s_stale_touch = true;
     memset(s_key_down, 0, sizeof(s_key_down));
@@ -342,11 +345,14 @@ static void on_enter(app_ctx_t* ctx) {
 }
 
 static void on_leave(app_ctx_t* ctx) {
-    (void)ctx;
     if (s_continuous) {
         continuous_du_reset();
         s_continuous = false;
     }
+    // 离开就把 832KB 还给 PSRAM；阅读页的 continuous_du_reset() 随后是空操作。
+    // Return the 832KB to PSRAM on exit; the reader's continuous_du_reset() then stays a no-op.
+    continuous_du_deinit();
+    ctx->continuous_ready = false;
     s_dot_count = 0;
 }
 
