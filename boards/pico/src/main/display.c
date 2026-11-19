@@ -158,22 +158,29 @@ static bool main_gray_column(int x) {
     return false;
 }
 
-static void main_normalize_body(EpdiyHighlevelState* hl) {
+// 二值化和"是否变化"合成一次遍历：原来 normalize 之后再整屏 memcmp，正文区多读一遍 372KB。
+// Binarize and detect change in one pass: the previous order re-read the whole body once more for memcmp.
+static bool main_normalize_body(EpdiyHighlevelState* hl, bool detect) {
     const size_t stride = (size_t)epd_width() / 2;
+    bool changed = false;
     for (int y = 0; y < epd_height(); ++y) {
         uint8_t* row = hl->front_fb + y * stride;
+        const uint8_t* back = hl->back_fb + y * stride;
         if (!s_main_band_count) {
             for (int x = 0; x < UI_NAV_REFRESH_END / 2; x += 4) {
                 uint32_t value;
                 memcpy(&value, row + x, sizeof(value));
                 const uint32_t binary = ((value & UINT32_C(0x88888888)) >> 3) * 15u;
-                if (value != binary) memcpy(row + x, &binary, sizeof(binary));
+                if (value != binary) { memcpy(row + x, &binary, sizeof(binary)); value = binary; }
+                if (detect && !changed && memcmp(row + x, back + x, sizeof(value))) changed = true;
             }
             continue;
         }
         for (int x = 0; x < UI_NAV_REFRESH_END / 2; ++x)
             if (!main_gray_column(x * 2)) row[x] = main_bw_byte(row[x]);
+        if (detect && !changed && memcmp(row, back, UI_NAV_REFRESH_END / 2)) changed = true;
     }
+    return changed;
 }
 
 static bool main_body_changed(EpdiyHighlevelState* hl) {
@@ -301,8 +308,9 @@ static bool main_begin(EpdiyHighlevelState* hl, enum EpdDrawError* result) {
     // 8帧整页方案被实机否定；用户接受主页面黑白、亚克力灰阶，黑白改用完整20相。
     // Hardware rejected whole-page 8-frame output; the user accepted black/white main pages with gray acrylic. Use the full 20-phase black/white table.
     main_freeze_navigation(hl, true);
-    if (fast) main_normalize_body(hl);
-    const bool changed = main_body_changed(hl);
+    // 快刷页当场二值化并顺便判定变化，避免同一段正文再读一遍。
+    // Fast pages binarize and detect the change at once instead of reading the body twice.
+    const bool changed = fast ? main_normalize_body(hl, true) : main_body_changed(hl);
     const bool fast_white = fast && (shelf_page ||
         (changing_page && s_main_quality == PICO_MAIN_FAST_WHITE_PHASES));
     uint8_t *cache = fast && !fast_white && changed && s_main_band_count
@@ -457,7 +465,7 @@ static enum EpdDrawError hl_update(
     const bool protected_area = area && s_main_armed && !s_main_fault && main_nav_geometry();
     if (protected_area) {
         main_freeze_navigation(hl, false);
-        if (app_settings_main_fast_refresh()) main_normalize_body(hl);
+        if (app_settings_main_fast_refresh()) (void)main_normalize_body(hl, false);
         clipped = *area;
         if ((int64_t)clipped.y + clipped.height > UI_NAV_REFRESH_END)
             clipped.height = UI_NAV_REFRESH_END - clipped.y;
