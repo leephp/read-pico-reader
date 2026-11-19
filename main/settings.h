@@ -279,6 +279,8 @@ uint8_t app_settings_book_paragraph_value(uint8_t level);
 uint8_t app_settings_book_paragraph_level(uint8_t percent);
 uint8_t app_settings_book_paragraph_spacing(void);
 void app_settings_set_book_paragraph_spacing(uint8_t percent);
+/// 一次重排同时落四项排版：共用一次 NVS 会话与提交。/ Persist a whole reflow in one NVS session and commit.
+void app_settings_set_book_layout(uint8_t px, uint8_t margin, uint8_t line, uint8_t para);
 /// 书架样式：1 深色书轨、2 亚克力、5 列表、6 液态玻璃；旧3/4安全回退2。/ Shelf styles: rail (1), acrylic (2), list (5), liquid glass (6); retired IDs 3/4 fall back to 2.
 uint8_t app_settings_shelf_style(void);
 /// 三种封面书架的进度角标，不影响列表进度。/ Progress badges on cover shelves, independent of list metadata.

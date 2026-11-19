@@ -703,6 +703,35 @@ void app_settings_set_book_px(uint8_t px) {
     nvs_put_u8(NVS_KEY_BOOK_PX, px);
 }
 
+// 一次重排会同时改字号/边距/行距/段距：四个键共用一个 NVS 会话和一次提交，而不是四次。
+// One reflow changes size, margin, line and paragraph spacing: four keys share one session and commit.
+void app_settings_set_book_layout(uint8_t px, uint8_t margin, uint8_t line, uint8_t para) {
+    px = valid_book_px(px);
+    if (margin > 48) margin = s_book_margin;
+    if (line < 110 || line > 150) line = s_book_line;
+    if (app_settings_book_paragraph_value(app_settings_book_paragraph_level(para)) != para)
+        para = s_book_para;
+    if (px == s_book_px && margin == s_book_margin && line == s_book_line && para == s_book_para) return;
+    // 与单键写入一致：先更新内存里的值，再尽力落盘。
+    // Same contract as the single-key setters: publish in RAM first, then persist best effort.
+    const uint8_t old_px = s_book_px, old_margin = s_book_margin,
+                  old_line = s_book_line, old_para = s_book_para;
+    s_book_px = px;
+    s_book_margin = margin;
+    s_book_line = line;
+    s_book_para = para;
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
+    esp_err_t err = ESP_OK;
+    if (err == ESP_OK && px != old_px) err = nvs_set_u8(h, NVS_KEY_BOOK_PX, px);
+    if (err == ESP_OK && margin != old_margin) err = nvs_set_u8(h, NVS_KEY_BOOK_MARGIN, margin);
+    if (err == ESP_OK && line != old_line) err = nvs_set_u8(h, NVS_KEY_BOOK_LINE, line);
+    if (err == ESP_OK && para != old_para) err = nvs_set_u8(h, NVS_KEY_BOOK_PARA, para);
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    if (err != ESP_OK) ESP_LOGW("settings", "book layout: %s", esp_err_to_name(err));
+}
+
 const char *app_settings_book_background_path(void) { return s_book_background; }
 bool app_settings_set_book_background_path(const char *path) {
     if (!path || (path[0] && strncmp(path, "/sdcard/pictures/", 17)) ||

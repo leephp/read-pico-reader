@@ -6487,10 +6487,7 @@ static app_redraw_t apply_reader_layout(app_ctx_t* ctx, int next_px, int next_ma
     }
     unlock_draw();
     if (!ok) return APP_REDRAW_NONE;
-    app_settings_set_book_px((uint8_t)s_px);
-    app_settings_set_book_margin((uint8_t)s_margin);
-    app_settings_set_book_line_spacing(next_line);
-    app_settings_set_book_paragraph_spacing(next_para);
+    app_settings_set_book_layout((uint8_t)s_px, (uint8_t)s_margin, next_line, next_para);
     save_progress();
     return APP_REDRAW_PAGE;
 }

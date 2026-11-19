@@ -21,6 +21,7 @@
  */
 
 #include "ttf_font.h"
+#include "fb_text_blit.h"
 #include "text_glue.h"
 #include "ttf_stroke_filter.h"
 #include "ui_hanzi_aa_scale.h"
@@ -1887,6 +1888,12 @@ static int reader_missing_advance(uint32_t cp,int px) {
     return -1;
 }
 static uint8_t s_cover[256];
+// 覆盖率→半字节查表的缓存；抗锯齿开关变化时失效。
+// Cached coverage→nibble table; invalidated when the antialias switch changes.
+static uint8_t s_ink_lut[256];
+static int s_ink_lut_fg = -1, s_ink_lut_bg = -1;
+static bool s_ink_lut_aa;
+static bool s_ink_lut_valid;
 static void ttf_cover_lut_init(void);
 static glyph_entry_t* rasterize_glyph(uint32_t codepoint, int pixel_height) {
     int gid = stbtt_FindGlyphIndex(&font_info, (int)codepoint);
@@ -2068,7 +2075,8 @@ static void warm_text_io(int pixel_height, const char* text, const char* end) {
     // CFF 没有 glyf 分块可预读：`file_loca` 是空的，照旧走下去会取到空表。
     // There are no glyf blocks to prefetch for CFF: `file_loca` is empty and the walk below
     // would index a null table.
-    if (text == NULL || glyf_ram != NULL || cff_outline) return;
+    // 内存字体整份可读，预读只剩空转：直接跳过。/ In-memory faces need no prefetch at all.
+    if (text == NULL || glyf_ram != NULL || cff_outline || font_mem != NULL) return;
     touch_n = 0;
     const char* cursor = text;
     uint32_t cps[TTF_GATHER_MAX];
@@ -2265,7 +2273,8 @@ static void unload_here(void) {
 
 static esp_err_t load_opened_font(void) {
     font_file_pos = UINT32_MAX;
-    io_ensure();
+    // 块缓冲按需分配：内建/内存字体的 file_read_at 走 font_mem，永远用不到这 160KB。
+    // The block cache is allocated on demand: in-memory faces read through font_mem and never use it.
     io_reset();
     io_unmap();
 
@@ -2688,7 +2697,7 @@ int ttf_text_left_bearing_px(int pixel_height, const char* text) {
 
 // 线性抗锯齿的中间灰在这块屏上偏亮。按 TTF_COVER_GAMMA 抬覆盖率，半透明边缘更深。
 static bool s_antialias = true;
-void ttf_set_antialias(bool enabled) { s_antialias = enabled; }
+void ttf_set_antialias(bool enabled) { s_antialias = enabled; s_ink_lut_valid = false; }
 bool ttf_get_antialias(void) { return s_antialias; }
 
 /* ---- 绘制 / Draw ---- */
@@ -2714,19 +2723,28 @@ static uint8_t mix_ink(uint8_t alpha, uint8_t fg, uint8_t bg) {
     return mix_ink_aa(alpha, fg, bg, s_antialias);
 }
 
+// 一次绘制只建一张覆盖率表：256 项换算替代每个墨点的除法。
+// Build the coverage table once per ink pair: 256 conversions instead of one division per ink pixel.
+static const uint8_t *ink_lut(uint8_t fg, uint8_t bg, bool antialias) {
+    if (s_ink_lut_valid && fg == s_ink_lut_fg && bg == s_ink_lut_bg && antialias == s_ink_lut_aa)
+        return s_ink_lut;
+    for (int a = 0; a < 256; ++a)
+        s_ink_lut[a] = a == 0 ? (uint8_t)FB_TEXT_SKIP : mix_ink_aa((uint8_t)a, fg, bg, antialias);
+    s_ink_lut_fg = fg;
+    s_ink_lut_bg = bg;
+    s_ink_lut_aa = antialias;
+    s_ink_lut_valid = true;
+    return s_ink_lut;
+}
+
 // 正立落字形：pen_x 是字身框左边缘，baseline 是框内基线。
 // Blit an upright glyph: pen_x is the em box's left edge and baseline its baseline inside it.
 static void blit_upright(uint8_t* framebuffer, int pen_x, int baseline,
                          const glyph_entry_t* glyph, uint8_t fg, uint8_t bg, bool antialias) {
     if (glyph->bitmap == NULL) return;
-    for (int gy = 0; gy < glyph->height; gy++) {
-        int yy = baseline - glyph->top + gy;
-        for (int gx = 0; gx < glyph->width; gx++) {
-            uint8_t alpha = glyph->bitmap[gy * glyph->width + gx];
-            if (alpha == 0) continue;
-            epd_draw_pixel(pen_x + glyph->left + gx, yy, mix_ink_aa(alpha, fg, bg, antialias) << 4, framebuffer);
-        }
-    }
+    fb_text_target_t target = fb_text_target(framebuffer);
+    fb_text_glyph(&target, pen_x + glyph->left, baseline - glyph->top,
+                  glyph->bitmap, glyph->width, glyph->height, ink_lut(fg, bg, antialias));
 }
 
 void ttf_draw_text(
