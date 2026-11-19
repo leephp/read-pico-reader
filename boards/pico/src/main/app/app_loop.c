@@ -784,11 +784,33 @@ void app_loop_run(const app_loop_config_t* config) {
             app_home_cover_mode_changed(); app_book_cover_mode_changed();
             cover_policy = requested_cover_policy;
         }
-        cst836u_touch_t touch = { 0 };
-        esp_err_t err = cst836u_read(config->tp, &touch);
+        // 实测：触摸上报是约6ms 的低脉冲，空闲时 IRQ 保持高。只在下降沿和兜底超时读 I²C，
+        // 其余时间沿用上一次状态——否则每5ms 的空闲 tick 会被当成松开。
+        // Measured: reports are ~6ms low pulses and IRQ idles high. Read I2C only on the latched
+        // edge or the safety timeout, and keep the previous state in between.
+        static cst836u_touch_t s_last_raw;
+        static int64_t s_touch_poll_ms;
+        static unsigned s_touch_reads;
+        cst836u_touch_t touch = s_last_raw;
+        esp_err_t err = ESP_OK;
+        const int64_t touch_now_ms = esp_timer_get_time() / 1000;
+        // 按住时每100ms 兜底确认松开，空闲时每500ms 兜底确认按下。
+        // Confirm a release every100ms while pressed and a press every500ms while idle.
+        const int64_t touch_interval = s_last_raw.touched ? 100 : 500;
+        if (cst836u_irq_pending(config->tp) || touch_now_ms - s_touch_poll_ms >= touch_interval) {
+            cst836u_touch_t fresh = { 0 };
+            err = cst836u_read(config->tp, &fresh);
+            s_touch_poll_ms = touch_now_ms;
+            s_touch_reads++;
+            if (err == ESP_OK) {
+                s_last_raw = fresh;
+                touch = fresh;
+            }
+        }
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "CST836U read failed: %s", esp_err_to_name(err));
             memset(&touch, 0, sizeof(touch));
+            memset(&s_last_raw, 0, sizeof(s_last_raw));
         }
 #ifdef KIIKO_LOCAL_LATENCY
         // 本地测时构建：对照 INT 电平与触摸状态，确认中断极性后再决定能否按 INT 轮询。
@@ -801,8 +823,8 @@ void app_loop_run(const app_loop_config_t* config) {
             if (level != last_int || now_ms - int_log_ms >= 200) {
                 int_log_ms = now_ms;
                 last_int = level;
-                ESP_LOGI(TAG, "touch int=%d touched=%d count=%u", level,
-                         touch.touched ? 1 : 0, (unsigned)touch.count);
+                ESP_LOGI(TAG, "touch int=%d touched=%d count=%u reads=%u", level,
+                         touch.touched ? 1 : 0, (unsigned)touch.count, s_touch_reads);
             }
         }
 #endif

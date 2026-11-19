@@ -29,6 +29,9 @@
 #define RST_BOOT_MS 50
 
 static const char* TAG = "cst836u";
+// 下降沿 ISR 只置标志，定义在中断 API 附近；init 里注册需要前置声明。
+// The falling-edge ISR only latches a flag; declared here because init registers it earlier.
+static void IRAM_ATTR cst836u_irq_isr(void* arg);
 
 struct cst836u_dev_t {
     i2c_master_bus_handle_t bus;
@@ -142,6 +145,18 @@ esp_err_t cst836u_init(i2c_master_bus_handle_t bus_handle, const cst836u_config_
         err = int_as_input(h);
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "INT GPIO%d input failed: %s", (int)h->int_gpio, esp_err_to_name(err));
+        } else {
+            // 下降沿中断只为 latch 上报标志；服务被别处装过也无妨。
+            // The falling-edge ISR only latches "a report arrived"; a pre-installed service is fine.
+            esp_err_t isr = gpio_install_isr_service(0);
+            if (isr != ESP_OK && isr != ESP_ERR_INVALID_STATE) {
+                ESP_LOGW(TAG, "GPIO ISR service: %s", esp_err_to_name(isr));
+            } else if (gpio_set_intr_type(h->int_gpio, GPIO_INTR_NEGEDGE) == ESP_OK &&
+                       gpio_isr_handler_add(h->int_gpio, cst836u_irq_isr, h) == ESP_OK) {
+                gpio_intr_enable(h->int_gpio);
+            } else {
+                ESP_LOGW(TAG, "INT GPIO%d IRQ setup failed; polling keeps working", (int)h->int_gpio);
+            }
         }
     }
 
@@ -279,6 +294,19 @@ bool cst836u_int_asserted(cst836u_handle_t h) {
 int cst836u_int_level(cst836u_handle_t h) {
     if (h == NULL || !gpio_ok(h->int_gpio)) return 1;
     return gpio_get_level(h->int_gpio);
+}
+
+// 触摸上报是低脉冲：只能靠下降沿记下来，读电平会漏。/ Reports are low pulses; latch the falling edge.
+static volatile bool s_irq_pending;
+static void cst836u_irq_isr(void* arg) {
+    (void)arg;
+    s_irq_pending = true;
+}
+bool cst836u_irq_pending(cst836u_handle_t h) {
+    (void)h;
+    const bool pending = s_irq_pending;
+    s_irq_pending = false;
+    return pending;
 }
 
 gpio_num_t cst836u_int_gpio(cst836u_handle_t h) {

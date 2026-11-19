@@ -107,10 +107,13 @@ esp_err_t cst836u_reset(cst836u_handle_t h);
 /// / RST then 0xFE00.
 esp_err_t cst836u_wake(cst836u_handle_t h);
 
-/// IRQ 开漏、低有效。
-/// / IRQ is open-drain, active low.
+/// IRQ 开漏、低有效；触摸期间是约 6ms 的低脉冲，不是电平。
+/// / IRQ is open-drain, active low, and pulsed (~6ms) per report rather than held.
 bool cst836u_int_asserted(cst836u_handle_t h);
 int cst836u_int_level(cst836u_handle_t h);
+/// 取走下降沿中断标志：真有上报才返回 true，读完清标志。
+/// / Take the falling-edge flag: true when a report actually arrived; clears it.
+bool cst836u_irq_pending(cst836u_handle_t h);
 gpio_num_t cst836u_int_gpio(cst836u_handle_t h);
 
 const char* cst836u_mode_name(cst836u_mode_t mode);
