@@ -2264,7 +2264,8 @@ static void warm_text_io(int pixel_height, const char* text, const char* end) {
     // CFF 没有 glyf 分块可预读：`file_loca` 是空的，照旧走下去会取到空表。
     // There are no glyf blocks to prefetch for CFF: `file_loca` is empty and the walk below
     // would index a null table.
-    if (text == NULL || glyf_ram != NULL || cff_outline) return;
+    // 内存字体整份可读，预读只剩空转：直接跳过。/ In-memory faces need no prefetch at all.
+    if (text == NULL || glyf_ram != NULL || cff_outline || font_mem != NULL) return;
     touch_n = 0;
     const char* cursor = text;
     uint32_t cps[TTF_GATHER_MAX];
@@ -2513,7 +2514,8 @@ static void unload_here(void) {
 
 static esp_err_t load_opened_font(void) {
     font_file_pos = UINT32_MAX;
-    io_ensure();
+    // 块缓冲按需分配：内建/内存字体的 file_read_at 走 font_mem，永远用不到这 160KB。
+    // The block cache is allocated on demand: in-memory faces read through font_mem and never use it.
     io_reset();
     io_unmap();
 
