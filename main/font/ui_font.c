@@ -46,11 +46,22 @@ static bool s_ready, s_attempted;
 // The glyph cache lives in PSRAM. Every lookup walks it, but rendering already streams the
 // framebuffer out of PSRAM, so this does not change the order of magnitude.
 static ui_glyph_t *s_glyphs;
+// 每个哈希桶记住最近一次落在那里的槽：重复字形（先量后画、同字多标签）直接命中，
+// 未命中才退回线性扫描，槽被淘汰时清掉指向它的提示。
+// Each hash bucket remembers the slot that last lived there, so repeated glyphs (measured then
+// drawn, the same character in several labels) hit directly; misses fall back to the scan and
+// eviction clears hints pointing at the freed slot.
+static int16_t s_hint[UI_GLYPH_SLOTS];
+static unsigned glyph_hash(uint32_t cp, int px) {
+    return (unsigned)((cp * 2654435761u) ^ ((unsigned)px * 40503u)) & (UI_GLYPH_SLOTS - 1);
+}
 
 static bool glyphs_alloc(void) {
-    if (!s_glyphs)
+    if (!s_glyphs) {
         s_glyphs = heap_caps_calloc(UI_GLYPH_SLOTS, sizeof(ui_glyph_t),
                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (s_glyphs) memset(s_hint, 0xFF, sizeof(s_hint));
+    }
     return s_glyphs != NULL;
 }
 static size_t s_bytes;
@@ -137,6 +148,9 @@ void ui_font_measure_line_px(int px, const char *text, int *above, int *below) {
 
 static void evict(ui_glyph_t *g) {
     if (!g->used) return;
+    const int slot = (int)(g - s_glyphs);
+    for (int i = 0; i < UI_GLYPH_SLOTS; ++i)
+        if (s_hint[i] == slot) s_hint[i] = -1;
     free(g->bitmap);
     s_bytes -= g->bytes;
     memset(g, 0, sizeof(*g));
@@ -144,9 +158,16 @@ static void evict(ui_glyph_t *g) {
 
 static ui_glyph_t *glyph_find(uint32_t cp, int px) {
     if (!s_glyphs) return NULL;
+    const unsigned bucket = glyph_hash(cp, px);
+    const int hint = s_hint[bucket];
+    if (hint >= 0 && s_glyphs[hint].used && s_glyphs[hint].cp == cp && s_glyphs[hint].px == px) {
+        s_glyphs[hint].age = ++s_age;
+        return &s_glyphs[hint];
+    }
     for (int i = 0; i < UI_GLYPH_SLOTS; ++i)
         if (s_glyphs[i].used && s_glyphs[i].cp == cp && s_glyphs[i].px == px) {
             s_glyphs[i].age = ++s_age;
+            s_hint[bucket] = (int16_t)i;
             return &s_glyphs[i];
         }
     return NULL;
@@ -181,6 +202,7 @@ static ui_glyph_t *glyph(uint32_t cp, int px) {
     *g = (ui_glyph_t){.cp = cp, .px = px, .age = ++s_age, .used = true,
         .x0 = x0, .y0 = y0, .width = x1 - x0, .height = y1 - y0,
         .advance = (int16_t)(supplemental ? fallback_advance : lroundf(advance * scale))};
+    s_hint[glyph_hash(cp, px)] = (int16_t)slot;
     if (g->width <= 0 || g->height <= 0) return g;
     g->bytes = (size_t)g->width * g->height;
     while (s_bytes + g->bytes > UI_GLYPH_LIMIT) {
