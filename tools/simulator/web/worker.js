@@ -1,6 +1,6 @@
 // 中文：压缩资源并行加载；不变画面不传像素。/ Load compressed resources in parallel and omit unchanged pixels.
 let core,ready=false,saved,demonstration=false,persistent=false,lastPixels;
-const version='0.3.3-rc97',started=performance.now();
+const version='当前源码',started=performance.now();
 function progress(text){postMessage({type:'progress',text,elapsed:Math.round(performance.now()-started)});}
 async function download(file,label,expectedSize){
  const controller=new AbortController();let timeout=setTimeout(()=>controller.abort(),25000);

@@ -33,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let screen = ScreenView()
     let status = NSTextField(labelWithString:"正在启动…")
     let booksStack = NSStackView()
-    let homeStyle = NSSegmentedControl(labels:["rc97 正式首页"],trackingMode:.selectOne,target:nil,action:nil)
+    let homeStyle = NSSegmentedControl(labels:["首页预览"],trackingMode:.selectOne,target:nil,action:nil)
     let process = Process()
     let input = Pipe(), output = Pipe()
     let ioQueue = DispatchQueue(label:"pico.engine.io")
@@ -89,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         status.font=NSFont.systemFont(ofSize:12);status.textColor = .secondaryLabelColor;left.addArrangedSubview(status)
         columns.addArrangedSubview(left)
         let right=NSStackView();right.orientation = .vertical;right.alignment = .leading;right.spacing=14;right.widthAnchor.constraint(equalToConstant:400).isActive=true;columns.addArrangedSubview(right)
-        right.addArrangedSubview(label("Pico",30,.semibold));right.addArrangedSubview(label("固件源码模拟 · 0.3.3-rc97",13));right.addArrangedSubview(label("684 × 1216 · 16 级灰阶",12))
+        right.addArrangedSubview(label("Pico",30,.semibold));right.addArrangedSubview(label("固件源码模拟 · 当前源码",13));right.addArrangedSubview(label("684 × 1216 · 16 级灰阶",12))
         right.addArrangedSubview(line())
         let tabs=row([button("首页",#selector(tab),0),button("书架",#selector(tab),1),button("文件",#selector(tab),2),button("设置",#selector(tab),3)],spacing:6);right.addArrangedSubview(tabs)
         homeStyle.target=self;homeStyle.action=#selector(homeCompare);homeStyle.selectedSegment=0;right.addArrangedSubview(homeStyle)
@@ -151,7 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }}
     @objc func showData(){NSWorkspace.shared.open(dataURL)}
     @objc func exportFrame(){guard let frame=framePath else{return};let panel=NSSavePanel();panel.nameFieldStringValue="Pico-\(Int(Date().timeIntervalSince1970)).png";panel.allowedContentTypes=[.png];panel.beginSheetModal(for:window){[weak self] result in if result == .OK,let url=panel.url{do{let data=try Data(contentsOf:URL(fileURLWithPath:frame));try data.write(to:url,options:.atomic)}catch{self?.alert("保存失败",error.localizedDescription)}}}}
-    @objc func about(){alert("Pico Mac 模拟器","基于 0.3.3-rc97 正式版源码的本地模拟版。\n界面、字体、阅读排版与书签使用固件代码。\n不会刷写真实设备；本版不执行 ESP32 BIN。")}
+    @objc func about(){alert("Pico Mac 模拟器","基于当前工作树源码的本地模拟版。\n界面、字体、阅读排版与书签使用固件代码。\n不会刷写真实设备；本版不执行 ESP32 BIN。")}
     func alert(_ title:String,_ message:String){let a=NSAlert();a.messageText=title;a.informativeText=message;a.beginSheetModal(for:window)}
     func snapshotWindow(){guard let view=window.contentView,let rep=view.bitmapImageRepForCachingDisplay(in:view.bounds) else{return};view.cacheDisplay(in:view.bounds,to:rep);if let png=rep.representation(using:.png,properties:[:]){try? png.write(to:dataURL.appendingPathComponent("mac-preview.png"))}}
     func applicationShouldTerminateAfterLastWindowClosed(_ sender:NSApplication)->Bool{true}
