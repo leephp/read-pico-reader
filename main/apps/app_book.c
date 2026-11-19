@@ -647,6 +647,10 @@ static int s_reader_slider = -1;
 static bool s_reader_slider_endpoint;
 static int s_reader_preview_px, s_reader_preview_margin, s_reader_preview_line, s_reader_preview_para;
 static int s_reader_preview_tracking;
+// 字号停留在面板上的目标值；静止 BOOK_PX_SETTLE_MS 后才重排。/ Target size shown in the panel; re-typeset after it stays quiet.
+static int s_pending_px;
+static int64_t s_pending_px_at;
+#define BOOK_PX_SETTLE_MS 800
 static uint32_t s_recent_days[30];
 static bool s_recent_days_valid;
 static char s_reader_notice[64];
@@ -3243,7 +3247,7 @@ static void draw_font_settings(uint8_t* fb) {
     bool prior_aa=ttf_get_antialias();ttf_set_antialias(true);
     draw_sheet(fb, reader_font_top(), "文字设置");
     draw_sheet_back(fb,reader_font_top());
-    int shown_px = s_reader_slider >= 0 ? s_reader_preview_px : s_px;
+    int shown_px = s_reader_slider >= 0 ? s_reader_preview_px : (s_pending_px ? s_pending_px : s_px);
     char value[16]; snprintf(value, sizeof(value), "%d", shown_px);
     draw_pill_slider(fb, reader_slider_rect(0), "A", "A", value,
                      shown_px - BOOK_PX_MIN, BOOK_PX_MAX - BOOK_PX_MIN + 1, 20, 31);
@@ -6008,6 +6012,8 @@ static bool open_book_impl(app_ctx_t* ctx, const char* path) {
     // Use the shared reading size for every book; per-book progress restores position only.
     s_px = app_settings_book_px();
     if (s_px < BOOK_PX_MIN || s_px > BOOK_PX_MAX) s_px = 48;
+    // 换书时丢弃上一本尚未结算的字号。/ Drop an unsettled size from the previous book.
+    s_pending_px = 0;
     size_t chapter = resume && p.chapter < book_chapter_count() ? p.chapter : 0;
     if (!load_chapter(ctx, chapter, resume && p.chapter == chapter ? p.byte_off : 0, false)) {
         free_book();
@@ -7277,6 +7283,48 @@ static app_redraw_t apply_reader_layout(app_ctx_t* ctx, int next_px, int next_ma
     return APP_REDRAW_PAGE;
 }
 
+// 字号：面板上的数字立即跟着点按走，正文只在最后一次点按静止 800ms 后重排一次。
+// Font size: the panel number follows every tap immediately; the body re-typesets once after the last tap is idle for 800 ms.
+static app_redraw_t px_settle_show(app_ctx_t* ctx) {
+    render(ctx, ctx->fb);
+    s_area = reader_slider_refresh_rect(0);
+    s_mode = MODE_GL16;
+    return APP_REDRAW_AREA;
+}
+
+static app_redraw_t px_settle_schedule(app_ctx_t* ctx, int px) {
+    if (px < BOOK_PX_MIN) px = BOOK_PX_MIN;
+    if (px > BOOK_PX_MAX) px = BOOK_PX_MAX;
+    if (px == s_px) {
+        if (!s_pending_px) return APP_REDRAW_NONE;
+        s_pending_px = 0;
+        return px_settle_show(ctx);
+    }
+    s_pending_px = px;
+    s_pending_px_at = ctx->now_ms + BOOK_PX_SETTLE_MS;
+    return px_settle_show(ctx);
+}
+
+static app_redraw_t px_settle_flush(app_ctx_t* ctx) {
+    if (!s_pending_px) return APP_REDRAW_NONE;
+    int px = s_pending_px;
+    s_pending_px = 0;
+    if (px == s_px) return APP_REDRAW_NONE;
+    app_redraw_t r = apply_reader_layout(ctx, px, s_margin, app_settings_book_line_spacing(),
+                                         app_settings_book_paragraph_spacing());
+    ESP_LOGI(TAG, "px settle %d->%d redraw=%d", s_px, px, (int)r);
+    return r;
+}
+
+static app_redraw_t px_settle_tick(app_ctx_t* ctx) {
+    if (!s_pending_px) return APP_REDRAW_NONE;
+    if (s_view != READING) { s_pending_px = 0; return APP_REDRAW_NONE; }
+    // 手指还在屏上或还在连点时不结算。/ Do not settle while a finger is down or taps keep coming.
+    if (ctx->touch && ctx->touch->touched) return APP_REDRAW_NONE;
+    if (ctx->now_ms < s_pending_px_at) return APP_REDRAW_NONE;
+    return px_settle_flush(ctx);
+}
+
 static app_redraw_t apply_reader_typography(app_ctx_t* ctx, int tracking_index) {
     (void)ctx;
     if (!s_text || tracking_index < 0 || tracking_index >= APP_BOOK_TRACK_COUNT)
@@ -7675,7 +7723,9 @@ static void reader_slider_map(int slider, int x) {
 
 static void reader_slider_begin(int slider, int x) {
     s_reader_slider = slider;
-    s_reader_preview_px = s_px;
+    // 连续点击沿用面板上待定的字号，下一次 +/- 从用户看到的值继续走。
+    // Consecutive taps continue from the size shown in the panel, not the last committed one.
+    s_reader_preview_px = s_pending_px ? s_pending_px : s_px;
     s_reader_preview_margin = s_margin;
     s_reader_preview_line = app_settings_book_line_spacing();
     s_reader_preview_para = app_settings_book_paragraph_spacing();
@@ -7740,6 +7790,8 @@ static app_redraw_t reader_slider_commit(app_ctx_t* ctx) {
     int tracking = s_reader_preview_tracking;
     s_reader_slider = -1;
     if (slider == 4) return apply_reader_typography(ctx, tracking);
+    // 字号松手后先只更新面板，静止 800ms 再重排。/ Commit the size into the panel now; re-typeset after 800 ms.
+    if (slider == 0) return px_settle_schedule(ctx, px);
     return apply_reader_layout(ctx, px, margin, line, (uint8_t)para);
 }
 
@@ -8024,8 +8076,7 @@ static app_redraw_t reader_panel_action(app_ctx_t* ctx, uint16_t x, uint16_t y) 
         }
         if (ui_rect_hit(size, x, y)) {
             int px = BOOK_PX_MIN + slider_index(size, x, BOOK_PX_MAX - BOOK_PX_MIN + 1);
-            return apply_reader_layout(ctx, px, s_margin, app_settings_book_line_spacing(),
-                                       app_settings_book_paragraph_spacing());
+            return px_settle_schedule(ctx, px);
         }
         if (ui_rect_hit(font, x, y)) {
             ttf_font_scan();
@@ -8936,6 +8987,9 @@ static void book_on_exit(app_ctx_t* ctx) {
 #if KIIKO_BOARD_METALIO47
 #endif
     reader_indent_hold_cancel();
+    // 未到停手时间的字号在离开前落盘，不把重排留到别的页面。
+    // Persist a still-pending size before leaving instead of reflowing on another page.
+    (void)px_settle_flush(ctx);
     // 离开阅读页时丢掉未扫完的连续 DU 相位并还原缩放状态。
     // Leaving the reader drops unfinished continuous-DU phases and the zoom state.
     if (s_image_zoom_bw) continuous_du_reset();
@@ -9958,6 +10012,8 @@ static app_redraw_t on_tick(app_ctx_t* ctx) {
     app_redraw_t font_reload = reader_font_reload_tick(ctx);
     if (font_reload != APP_REDRAW_NONE) return font_reload;
 #endif
+    app_redraw_t px_settle = px_settle_tick(ctx);
+    if (px_settle != APP_REDRAW_NONE) return px_settle;
     app_redraw_t recovery = reader_font_recovery_tick(ctx);
     if (recovery != APP_REDRAW_NONE) return recovery;
     if (s_reader_panel == READER_PANEL_FONT_RECOVERY) return APP_REDRAW_NONE;
@@ -10150,6 +10206,8 @@ static void before_lock(app_ctx_t* ctx) {
 #else
 #endif
     reader_indent_hold_cancel();
+    // 锁屏前把待定字号落盘并完成重排。/ Persist and apply a pending size before locking.
+    (void)px_settle_flush(ctx);
     s_shelf_key_mode=s_shelf_key_paint_pending=false;s_shelf_key_delta=s_shelf_key_pressed=0;
     shelf_category_remember(ctx);
     s_category_menu=false;
