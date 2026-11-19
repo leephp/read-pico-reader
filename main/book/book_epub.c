@@ -97,6 +97,13 @@ typedef struct {
 typedef struct epub_parts epub_parts_t;
 static void epub_parts_close(epub_parts_t *parts);
 
+#define EPUB_DIMS_CACHE 16
+
+typedef struct {
+    uint32_t entry_plus1, bytes; ///< 0 表示空槽 / 0 marks an empty slot
+    uint16_t width, height;
+} epub_dims_t;
+
 struct book_epub {
     zip_reader_t *zip; ///< ZIP 所有权 / ZIP ownership
     epub_parts_t *parts;
@@ -122,6 +129,10 @@ struct book_epub {
     bool fonts_enabled; ///< 用户开关，默认开 / User toggle, on by default
     text_block_t* text_blocks; ///< 标题与锚点池 / Pool for titles and anchors
     text_block_t* text_last; ///< 池的尾块 / Tail block of the pool
+    // 插图尺寸按 ZIP 条目缓存：重排、改字号和翻回本页都不再重复解压图片头。
+    // Image dimensions cached per ZIP entry, so re-layout, font changes and revisits stop re-inflating headers.
+    epub_dims_t dims_cache[EPUB_DIMS_CACHE];
+    uint8_t dims_next;
 };
 typedef struct {
     uint32_t count;
@@ -2474,8 +2485,8 @@ esp_err_t book_epub_cover(const char *path, uint8_t **data, size_t *size, bool *
     return book_epub_cover_bounded(path, data, size, is_png, ZIP_OUTPUT_MAX);
 }
 
-esp_err_t book_epub_image_info(book_epub_t *book, size_t chapter, const char *src,
-                             unsigned *width, unsigned *height, size_t *bytes) {
+static esp_err_t image_info_probe(book_epub_t *book, size_t chapter, const char *src,
+                                  unsigned *width, unsigned *height, size_t *bytes) {
     if (!book || chapter >= book->count || !src || !width || !height) return ESP_ERR_INVALID_ARG;
     *width = *height = 0;
     if (bytes) *bytes = 0;
@@ -2533,6 +2544,43 @@ esp_err_t book_epub_image_info(book_epub_t *book, size_t chapter, const char *sr
     }
     return ESP_ERR_NOT_SUPPORTED;
 }
+esp_err_t book_epub_image_info(book_epub_t *book, size_t chapter, const char *src,
+                             unsigned *width, unsigned *height, size_t *bytes) {
+    if (!book || chapter >= book->count || !src || !width || !height) return ESP_ERR_INVALID_ARG;
+    *width = *height = 0;
+    if (bytes) *bytes = 0;
+    // 同一个 ZIP 条目只探测一次：重排、改字号、翻回本页都直接命中缓存。
+    // Probe each ZIP entry once; re-layout, font changes and revisits hit the cache.
+    char path[EPUB_PATH_CAP];
+    int entry = -1;
+    if (resolve_path(zip_entry_name(book->zip, book->chapters[chapter].zip_index), src, path))
+        entry = zip_find(book->zip, path);
+    if (entry >= 0) {
+        const uint32_t key = (uint32_t)entry + 1;
+        for (int i = 0; i < EPUB_DIMS_CACHE; ++i)
+            if (book->dims_cache[i].entry_plus1 == key) {
+                *width = book->dims_cache[i].width;
+                *height = book->dims_cache[i].height;
+                if (bytes) *bytes = book->dims_cache[i].bytes;
+                return ESP_OK;
+            }
+    }
+    esp_err_t err = image_info_probe(book, chapter, src, width, height, bytes);
+    if (err == ESP_OK && entry >= 0 && *width && *height && *width <= 0xFFFFu && *height <= 0xFFFFu) {
+        int slot = -1;
+        for (int i = 0; i < EPUB_DIMS_CACHE; ++i)
+            if (!book->dims_cache[i].entry_plus1) { slot = i; break; }
+        if (slot < 0) slot = book->dims_next++ % EPUB_DIMS_CACHE;
+        book->dims_cache[slot] = (epub_dims_t){
+            .entry_plus1 = (uint32_t)entry + 1,
+            .bytes = bytes ? (uint32_t)*bytes : 0,
+            .width = (uint16_t)*width,
+            .height = (uint16_t)*height,
+        };
+    }
+    return err;
+}
+
 esp_err_t book_epub_image_dimensions(book_epub_t *book, size_t chapter, const char *src,
                                      unsigned *width, unsigned *height) {
     return book_epub_image_info(book, chapter, src, width, height, NULL);
