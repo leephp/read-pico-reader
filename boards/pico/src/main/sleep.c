@@ -81,7 +81,9 @@
 static const char* TAG = "read_pico";
 static bool s_lock_feedback_visible, s_lock_feedback_failed;
 
-#define APP_LOCK_LIGHT_SLEEP_MS (10U * 60U * 1000U)
+// 锁屏浅睡每30分钟醒一次刷新时钟即可；原10分钟多出4倍唤醒。
+// The locked device only needs a wake every 30 minutes to refresh the clock; 10 minutes tripled the wakeups.
+#define APP_LOCK_LIGHT_SLEEP_MS (30U * 60U * 1000U)
 #define APP_LOCK_KEY_POLL_US (2LL * 1000 * 1000)
 #define APP_LOCK_STUCK_IRQ_US (3LL * 1000 * 1000)
 #define APP_LOCK_SLEEP_ERROR_LIMIT 5

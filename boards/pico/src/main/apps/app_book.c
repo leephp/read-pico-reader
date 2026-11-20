@@ -5186,6 +5186,8 @@ static bool open_book_impl(app_ctx_t* ctx, const char* path) {
         return false;
     }
     s_reader_return_home = false;
+    // 阅读页翻页间隔短，高压轨按3秒回收；离开时恢复8秒。/ Reader turns are close together: reclaim HV after 3 s.
+    display_set_reader_rails(true);
     if (!strncmp(path, "/sdcard/", 8)) {
         read_pico_sd_info_t sd = {0};
         read_pico_sd_get_info(&sd);
@@ -6741,6 +6743,7 @@ static app_redraw_t apply_reader_option(app_ctx_t* ctx, int kind) {
 static app_redraw_t reader_return(app_ctx_t *ctx) {
     app_book_ticket_sample(ctx->now_ms, false);
     save_progress();
+    display_set_reader_rails(false);
     if (s_reader_return_home) {
         ui_nav_request(ctx, 0);
         return APP_REDRAW_NONE;
@@ -8080,6 +8083,7 @@ static void on_enter(app_ctx_t* ctx) {
 
 }
 static void book_on_exit(app_ctx_t* ctx) {
+    display_set_reader_rails(false);
     cancel_shelf_open();
     app_book_ticket_sample(ctx->now_ms, false);
     cover_lookup_cleanup();

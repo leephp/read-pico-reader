@@ -70,9 +70,17 @@ void display_set_bulk_io(bool active) {
     ESP_LOGI(TAG, "bulk I/O scan margin %s", active ? "on" : "off");
 }
 
-// 高压轨在连续操作间保留30秒，避免反复500ms放电；像素驱动在每轮结束时立即释放。
-// Keep HV rails for a thirty-second burst to avoid repeated 500ms discharge; release pixel drive after every output.
-#define RAILS_IDLE_TIMEOUT_MS 30000
+// 高压轨空闲超时：普通页面8秒，阅读页3秒（翻页间隔短，重复上电的代价可接受）。
+// 原来的30秒让每次停止操作后多耗二十几秒 boost 电流。
+// HV idle timeout: 8 s on ordinary pages, 3 s in the reader (short turn gaps make a re-boost
+// acceptable). The previous 30 s kept the boost alive for over twenty extra seconds after each stop.
+#define RAILS_IDLE_TIMEOUT_DEFAULT_MS 8000U
+#define RAILS_IDLE_TIMEOUT_READER_MS 3000U
+static uint32_t rails_idle_timeout_ms = RAILS_IDLE_TIMEOUT_DEFAULT_MS;
+
+void display_set_reader_rails(bool reader) {
+    rails_idle_timeout_ms = reader ? RAILS_IDLE_TIMEOUT_READER_MS : RAILS_IDLE_TIMEOUT_DEFAULT_MS;
+}
 
 // 0 表示轨道已断电；否则是到期时间（ms），到点后主循环断电。
 // 0 means the rails are off; otherwise a deadline (ms) after which the loop powers them down.
@@ -85,7 +93,7 @@ void rails_keepalive(void) {
     // 包括无变化和失败返回：释放像素驱动，不增加扫描或全刷。
     // Release pixel drive even after unchanged/failed output, without another scan or full refresh.
     drive_release_retry_ms = read_pico_epd_release_drive() ? 0 : now_ms + 50;
-    rails_deadline_ms = now_ms + RAILS_IDLE_TIMEOUT_MS;
+    rails_deadline_ms = now_ms + rails_idle_timeout_ms;
     pico_online_display_end(held);
 }
 

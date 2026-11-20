@@ -1214,6 +1214,15 @@ void read_pico_transfer_service_poll(void) {
     if (!s_started || s_cfg.mode != READ_PICO_TRANSFER_MODE_STA) return;
     int64_t now = esp_timer_get_time() / 1000;
     read_pico_transfer_status_t snapshot;read_pico_transfer_get_status(&snapshot);
+    // 没有浏览器连着就让基带按信标休眠；有客户端或正在收文件时保持低延迟。
+    // 上传代码会在收发期间临时设 WIFI_PS_NONE 并恢复，这里跳过上传窗口，不与其争用。
+    // Sleep the baseband between beacons while no client is attached; stay responsive with a client
+    // or an upload in flight. Uploads temporarily force WIFI_PS_NONE, so skip that window.
+    if (snapshot.state != READ_PICO_TRANSFER_UPLOADING && !snapshot.cur_total) {
+        static wifi_ps_type_t applied_ps = (wifi_ps_type_t)-1;
+        const wifi_ps_type_t want_ps = snapshot.sta_count ? WIFI_PS_MIN_MODEM : WIFI_PS_MAX_MODEM;
+        if (want_ps != applied_ps && esp_wifi_set_ps(want_ps) == ESP_OK) applied_ps = want_ps;
+    }
     if(!s_profile_confirmed&&snapshot.network_ready&&snapshot.state!=READ_PICO_TRANSFER_UPLOADING&&now>=s_profile_confirm_after){
         if(claim_config()){
             esp_err_t saved=confirm_current_credentials();
@@ -3008,6 +3017,15 @@ void read_pico_transfer_service_poll(void) {
     if (!s_started || s_cfg.mode != READ_PICO_TRANSFER_MODE_STA) return;
     int64_t now = esp_timer_get_time() / 1000;
     read_pico_transfer_status_t snapshot;read_pico_transfer_get_status(&snapshot);
+    // 没有浏览器连着就让基带按信标休眠；有客户端或正在收文件时保持低延迟。
+    // 上传代码会在收发期间临时设 WIFI_PS_NONE 并恢复，这里跳过上传窗口，不与其争用。
+    // Sleep the baseband between beacons while no client is attached; stay responsive with a client
+    // or an upload in flight. Uploads temporarily force WIFI_PS_NONE, so skip that window.
+    if (snapshot.state != READ_PICO_TRANSFER_UPLOADING && !snapshot.cur_total) {
+        static wifi_ps_type_t applied_ps = (wifi_ps_type_t)-1;
+        const wifi_ps_type_t want_ps = snapshot.sta_count ? WIFI_PS_MIN_MODEM : WIFI_PS_MAX_MODEM;
+        if (want_ps != applied_ps && esp_wifi_set_ps(want_ps) == ESP_OK) applied_ps = want_ps;
+    }
     if(!s_profile_confirmed&&snapshot.network_ready&&snapshot.state!=READ_PICO_TRANSFER_UPLOADING&&now>=s_profile_confirm_after){
         if(claim_config()){
             esp_err_t saved=confirm_current_credentials();

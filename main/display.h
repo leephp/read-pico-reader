@@ -44,6 +44,9 @@ extern "C" {
 /// 保留高压轨并释放像素驱动，包括无变化刷新；不增加扫描。/ Retain HV rails and release pixel drive, including no-change updates, without another scan.
 void rails_keepalive(void);
 void rails_idle_check(int64_t now_ms);
+/// 阅读页用更短的高压轨空闲超时（3 秒），其他页面 8 秒；Pico 实现。
+/// / Shorter HV idle timeout in the reader (3 s) than elsewhere (8 s); Pico implementation.
+void display_set_reader_rails(bool reader);
 
 /// 大量文件I/O期间增加扫描预填，调用方离开时恢复。/ Increase scan prefill during bulk file I/O; caller restores on exit.
 void display_set_bulk_io(bool active);
