@@ -51,6 +51,25 @@
 | §4 pico 分区尾部 3.00MB 未分配 | 改分区会改变 OTA 基线与既有用户数据布局 | 版本化的分区/迁移方案，且不能同号覆盖已发布固件 |
 | S31 侧验证 | 本机只有 pico 设备；S31 的改动只做到语法级编译检查 | S31 设备 |
 
+## pico 省电 / Power (Pico)
+
+已做（`e3d159e`）：
+
+| 项 | 改动 | 依据 |
+| --- | --- | --- |
+| EPD 高压轨空闲回收 | 30s → **8s**；阅读页 **3s**（`display_set_reader_rails`） | `boards/pico/src/main/display.c` 原 `RAILS_IDLE_TIMEOUT_MS 30000` |
+| 传书 Wi-Fi 省电 | 无客户端 `MAX_MODEM`，有客户端 `MIN_MODEM`，上传窗口跳过 | 组件原先没有任何 `esp_wifi_set_ps` |
+| 锁屏浅睡唤醒 | 10 分钟 → **30 分钟** | `boards/pico/src/main/sleep.c APP_LOCK_LIGHT_SLEEP_MS` |
+| 新机自动锁屏 | 默认 5 分钟；已保存选择（含关闭）沿用 | `main/settings.c` 原默认关闭 |
+
+未做：
+
+- **PM_ENABLE + tickless idle**：真正的数量级收益，但与 120MHz PSRAM/flash 实验组合、禁用温度补偿、EPD 扫描时序冲突，需长时间 soak。
+- **BLE modem sleep**：IDF 6.1 的 `BT_CTRL_MODEM_SLEEP` 与 `esp_bt_sleep_enable()` **仅提供 ESP32/C3**，S3 无接口。
+- **关闭 USB-Serial/JTAG 控制台**：评估收益不足 1mA，代价是失去唯一诊断通道，不做。
+- **SD 空闲断电**：未确认 pico 的 SD 供电是否有可控开关（`read_pico_sd.c` 无掉电路径）。
+- **加速度计**：已是 `SC7A20H_CONFIG_IDLE`（12.5Hz + LOW POWER + OSR/DLPF 关闭），无可再降。
+
 补充记录（本轮实测得到的硬约束）：
 
 - `tools/build_firmware.py:287` 会主动删除 `KIIKO_LOCAL_LATENCY`/`METALIO_LOCAL_LATENCY` 并固定 `-DMETALIO_LOCAL_LATENCY=OFF`；带探针的构建只能直接调用 `idf.py`。
