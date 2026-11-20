@@ -582,6 +582,27 @@ static bool try_load_saved_sd_font(bool allow_probe) {
 
 static int64_t s_media_recovery_after_ms;
 static unsigned s_media_recovery_attempts;
+// 读卡器模式只能显式进入；主机断开或页面已不在时自动交还串口，避免“认不到设备”。
+// MSC is opt-in; return the PHY to Serial/JTAG when the host goes away or the page is gone.
+static int64_t s_usb_gone_since_ms;
+static int64_t s_usb_orphan_retry_ms;
+static void usb_msc_housekeeping(app_ctx_t *ctx, const app_desc_t *current) {
+    if (!usb_storage_active()) { s_usb_gone_since_ms = 0; s_usb_orphan_retry_ms = 0; return; }
+    if (!usb_storage_connected()) {
+        if (!s_usb_gone_since_ms) { s_usb_gone_since_ms = ctx->now_ms ? ctx->now_ms : 1; return; }
+        if (ctx->now_ms - s_usb_gone_since_ms < 8000) return;
+        s_usb_gone_since_ms = 0;
+        esp_err_t err = usb_storage_stop();
+        ESP_LOGI(TAG, "USB host gone, stop MSC -> %s", esp_err_to_name(err));
+        return;
+    }
+    s_usb_gone_since_ms = 0;
+    if (current != &app_transfer && ctx->now_ms >= s_usb_orphan_retry_ms) {
+        s_usb_orphan_retry_ms = ctx->now_ms + 1000;
+        esp_err_t err = usb_storage_stop();
+        ESP_LOGW(TAG, "MSC off USB page, stop -> %s", esp_err_to_name(err));
+    }
+}
 // 页面已释放句柄后才排队恢复；缺卡等待稳定插入，持续故障按1/3/10/30秒退避。
 // Queue recovery only after page handles close; wait for insertion and back off persistent faults by 1/3/10/30 seconds.
 static void recover_media(app_ctx_t *ctx, const read_pico_sd_info_t *info) {
@@ -606,6 +627,7 @@ static void recover_media(app_ctx_t *ctx, const read_pico_sd_info_t *info) {
 // Stop page/font consumers first; Pico waits for worker release on later polls before asynchronous remount.
 static bool poll_media(app_ctx_t* ctx, const app_desc_t* current,
                        bool* mounted, bool* invalidated) {
+    usb_msc_housekeeping(ctx, current);
     if (usb_storage_active()) {
         s_media_recovery_attempts = 0; s_media_recovery_after_ms = 0;
         *mounted = false; *invalidated = false; return false;
