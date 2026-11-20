@@ -39,6 +39,7 @@ void epd_hl_set_all_white(EpdiyHighlevelState*h){if(h->front_fb)memset(h->front_
 uint8_t *epd_hl_get_framebuffer(EpdiyHighlevelState*h){return h->front_fb;}
 void guard_draw_result(EpdiyHighlevelState*h,enum EpdDrawError e){(void)h;(void)e;}
 void rails_keepalive(void){}void display_set_bulk_io(bool active){(void)active;}
+void display_set_reader_rails(bool reader){(void)reader;}
 enum EpdDrawError update_display_mode(EpdiyHighlevelState*h,enum EpdDrawMode m){return 0;}
 enum EpdDrawError update_display_mode_diff(EpdiyHighlevelState*h,enum EpdDrawMode m){return 0;}
 enum EpdDrawError update_display_full(EpdiyHighlevelState*h){return 0;}

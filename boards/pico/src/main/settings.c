@@ -255,7 +255,13 @@ void app_settings_init(void) {
     raw = 0;
 
     raw = 0;
-    if (nvs_get_u8(h, NVS_KEY_AUTO_LOCK, &raw) == ESP_OK && (raw == 1 || raw == 5 || raw == 10)) s_auto_lock_minutes = raw;
+    // 新机默认5分钟自动锁屏（原来默认关闭）；用户已保存的选择（含“关闭”）一律沿用。
+    // New devices default to a 5-minute auto-lock (previously off); an explicit saved choice, including
+    // off, is always kept.
+    if (nvs_get_u8(h, NVS_KEY_AUTO_LOCK, &raw) == ESP_OK)
+        s_auto_lock_minutes = (raw == 1 || raw == 5 || raw == 10) ? raw : 0;
+    else
+        s_auto_lock_minutes = 5;
     size_t value_len = sizeof(s_device_name);
     if (nvs_get_str(h, NVS_KEY_DEVICE_NAME, s_device_name, &value_len) != ESP_OK || !s_device_name[0])
         strlcpy(s_device_name, "kiikoread", sizeof(s_device_name));
