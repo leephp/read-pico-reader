@@ -105,6 +105,12 @@ static int s_cover_next;
 static uint64_t s_cover_font_key;
 static unsigned s_weread_cover_revision;
 static bool s_scan_pending;
+// 首页扫描可能赶在 SD 挂载/进度记录可读之前；空卡片时按间隔重扫，避免只能靠重启恢复。
+// A home scan can race the SD mount or the progress record; retry the scan instead of requiring a reboot.
+#define HOME_RESCAN_DELAY_US (5 * 1000 * 1000)
+#define HOME_RESCAN_TRIES 60
+static int64_t s_scan_retry_us;
+static uint8_t s_scan_retry_left = HOME_RESCAN_TRIES;
 static bool s_books_cache_valid;
 static bool s_cached_sd_present;
 static bool s_cached_sd_mounted;
@@ -858,6 +864,17 @@ static void refresh_excerpt(void) {
     s_excerpt[0]=0;
     if(book->has_progress)book_excerpt_load(book->path,book->progress.chapter,s_excerpt);
 }
+static bool home_books_empty(void) { return !s_current.path[0] && !s_recent[0].path[0]; }
+static void home_rescan_later(void) {
+    if (!s_scan_retry_left) return;
+    --s_scan_retry_left;
+    s_scan_pending = true;
+    s_scan_retry_us = esp_timer_get_time() + HOME_RESCAN_DELAY_US;
+}
+static void home_rescan_done(bool found) {
+    if (found) { s_scan_retry_left = HOME_RESCAN_TRIES; s_scan_retry_us = 0; }
+    else home_rescan_later();
+}
 static void on_enter(app_ctx_t *ctx) {
     const unsigned cover_revision = book_weread_cover_revision();
     if (cover_revision != s_weread_cover_revision) {
@@ -885,12 +902,14 @@ static void on_enter(app_ctx_t *ctx) {
         s_cached_sd_present==sd.present&&s_cached_sd_mounted==sd.mounted&&!strcmp(s_cached_books_dir,app_settings_books_dir());
     char last[BOOK_STORE_PATH_MAX]={0};book_progress_last_path(last,sizeof(last));
     bool changed=strcmp(last,s_cached_last_path);
-    if(same&&!changed){if(s_cached_progress_revision!=progress_revision)refresh_progress();s_scan_pending=false;}
+    if(same&&!changed){if(s_cached_progress_revision!=progress_revision)refresh_progress();s_scan_pending=false;
+        home_rescan_done(!home_books_empty());}
     else {
         memset(&s_current,0,sizeof(s_current));memset(s_recent,0,sizeof(s_recent));s_scan_pending=!same;
         if(s_scan_pending) read_pico_sd_start_probe();
         scan_books();
         if(same||error!=ESP_ERR_NOT_FINISHED)remember_scan_state(&sd);
+        home_rescan_done(!home_books_empty());
     }
     if(!same||changed)restore_cover_cache();
     rp_boot_mark("scan");
@@ -914,14 +933,21 @@ static app_redraw_t on_tick(app_ctx_t *ctx) {
     bool folder_preview=s_view==HOME_COMPONENT&&s_component_browse==APP_HOME_FOLDER;
     if(s_view==HOME_ROOT||folder_preview){
     if(s_scan_pending) {
+        if(s_scan_retry_us && esp_timer_get_time() < s_scan_retry_us) return APP_REDRAW_NONE;
+        s_scan_retry_us = 0;
         read_pico_sd_info_t info={0};if(read_pico_sd_get_info(&info)==ESP_ERR_NOT_FINISHED)return APP_REDRAW_NONE;
         s_scan_pending=false;
         if(info.mounted) {
             s_cover_generation=book_cover_jobs_begin();
             memset(&s_current,0,sizeof(s_current));memset(s_recent,0,sizeof(s_recent));s_cover_next=0;
             scan_books();restore_cover_cache();remember_scan_state(&info);refresh_excerpt();avatar_prepare_state();s_folder_attempted=false;
-            free(s_folder);s_folder=NULL;return APP_REDRAW_PAGE;
-        }remember_scan_state(&info);
+            bool found=!home_books_empty();
+            free(s_folder);s_folder=NULL;
+            home_rescan_done(found);
+            return found?APP_REDRAW_PAGE:APP_REDRAW_NONE;
+        }
+        remember_scan_state(&info);
+        home_rescan_later();
     }
     if(s_view==HOME_ROOT&&s_avatar_pending) {
         ui_avatar_state_t state=ui_avatar_poll(s_avatar_path,60,s_avatar);
