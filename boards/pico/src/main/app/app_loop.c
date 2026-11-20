@@ -594,10 +594,9 @@ static void ensure_wake_on_charge(void) {
     const pmu_snapshot_t *s = read_pico_pmu_get();
     if (!s || !s->config_ok) return;
     s_ac_on_checked = true;
-    if (s->config.wake_on_charge) return;
     uint8_t on = 1;
     esp_err_t err = read_pico_pmu_cmd(PMU_CMD_CONFIG_SET_WAKE_ON_CHARGE, &on, 1);
-    ESP_LOGI(TAG, "AC-on default -> %s", esp_err_to_name(err));
+    ESP_LOGI(TAG, "AC-on set -> %s (was %u)", esp_err_to_name(err), (unsigned)s->config.wake_on_charge);
 }
 static void usb_msc_housekeeping(app_ctx_t *ctx, const app_desc_t *current) {
     if (!usb_storage_active()) { s_usb_gone_since_ms = 0; s_usb_orphan_retry_ms = 0; return; }
