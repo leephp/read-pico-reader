@@ -62,6 +62,17 @@
 | 锁屏浅睡唤醒 | 10 分钟 → **30 分钟** | `boards/pico/src/main/sleep.c APP_LOCK_LIGHT_SLEEP_MS` |
 | 新机自动锁屏 | 默认 5 分钟；已保存选择（含关闭）沿用 | `main/settings.c` 原默认关闭 |
 
+实机验收（2026-11-20，pico，ESP32-S3 MAC 84:c7:bb:5f:79:68）：
+
+```
+I (129185) sy7636a: rails on, VCOM=-1500 mV   ← 操作触发刷屏
+I (105834) sy7636a: rails off                 ← 停手8秒断电（原30秒）
+I (131880) app_loop: page -> 图书 Books       ← 触摸导航正常（中断门控未挡输入）
+I (133078) book: turn chapter=92 page=13/19   ← 阅读页翻页正常
+```
+
+固件 4,181,232 B / 槽余 13,072 B，sha256 `7b51a4b6…` 与构建产物一致。Wi-Fi 省电与 30 分钟锁屏浅睡尚未实机验证。
+
 未做：
 
 - **PM_ENABLE + tickless idle**：真正的数量级收益，但与 120MHz PSRAM/flash 实验组合、禁用温度补偿、EPD 扫描时序冲突，需长时间 soak。
