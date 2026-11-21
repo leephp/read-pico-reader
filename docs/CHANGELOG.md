@@ -1,5 +1,10 @@
 # 版本变更 / Changelog
 
+## 未发布 / Unreleased
+
+- 开发主线仅保留Pico，S31最后支持源码归档为 `s31-final-2026-11-21`。保留已发布固件、S31历史下载与OTA入口；本次不发布新固件。
+- Main now maintains Pico only. Final S31 source is archived at `s31-final-2026-11-21`; published images, historical S31 downloads and OTA feeds remain unchanged. No new firmware is published.
+
 ## 本地测试 / Local test — 2026-11-21（Pico U 盘首次连接）
 
 - 修复 Pico 在数据线已连接时首次进入「文件管理 → U 盘模式」电脑不认盘：进入时强制一次真实 USB 断开/重连，并在共享 PHY 切换前后关闭/恢复 Serial/JTAG 的 pad 与 D+ 上拉，不再依赖上一次退出残留的 SDIS 状态。

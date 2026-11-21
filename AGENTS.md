@@ -8,6 +8,14 @@ Agent entry for this tree. Humans can read it too. Product overview, hardware, p
 
 Newcomers (human or agent): read [docs/ONBOARDING.md](docs/ONBOARDING.md). Taking over an in-flight task: read [docs/HANDOFF.md](docs/HANDOFF.md) first.
 
+## 当前维护范围：仅 Pico / Current scope: Pico only
+
+用户2026-11-21明确终止S31开发支持：主线只维护Pico，当前双板源码已归档到 `s31-final-2026-11-21`（`016f4f8`）。此指令取代下方历史条目中的S31开发/双板同步要求。Pico实际源码直接位于 `main/` 与 `components/`，不再使用 `boards/pico/src/` 覆盖；配置、分区和依赖锁继续放在 `boards/pico/`。保留Pico使用的公共功能和原硬件参数。
+The user ends S31 development on2026-11-21. Main maintains Pico only; the final dual-board source is tagged `s31-final-2026-11-21` (`016f4f8`). This supersedes historical S31 development/parity requirements below. Pico sources live directly in `main/` and `components/`; `boards/pico/` retains configuration, partitions and dependency locks.
+
+保留所有已发布固件原字节、S31历史下载/刷机入口与既有OTA地址；网站的S31项标记停止维护，不接收Pico更新。本次不发布新固件、不刷设备；系统字体点击问题另案处理。保留的S31网页安装器和资源校验工具仅服务历史固件，不代表恢复开发支持。
+Preserve all published bytes, S31 historical download/flashing entries and OTA URLs. Mark S31 as discontinued; never offer Pico firmware to S31. No new firmware publication or device flash in this cleanup. The system-font issue is separate. Retained S31 installer/asset tools serve historical firmware only.
+
 ## S31阅读GL16 / S31 reader GL16
 
 用户2026-11-19已实测确认进度保存、底栏章名及配置恢复均正常，追加授权发布S31 RC116到官网/在线刷机与联网OTA，沿用RC115更新日志，导出Cloudzao 0x0单文件全量BIN；保持PICO正式RC109原字节与RC115历史归档。

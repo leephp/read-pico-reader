@@ -1,5 +1,7 @@
 # kiikoread
 
+**Maintenance scope (2026-11-21): Pico only.** S31 development has ended. [The final S31 source](https://github.com/leephp/read-pico-reader/tree/s31-final-2026-11-21) remains archived; published Pico RC109 / S31 RC116 binaries and historical downloads remain unchanged. See [build instructions](docs/BOARDS.md). This source cleanup publishes no new firmware.
+
 > **Licensing:** New original material explicitly marked with the [Personal Study License](licenses/kiikoread-Personal-Study-1.0.txt) permits personal study and prohibits commercial use without separate written permission. **This policy does not relicense rc93 or earlier code/binaries, remove existing Apache-2.0 rights, or override third-party licenses.** See [LICENSE](LICENSE) for the exact scope.
 
 The public project name is **kiikoread**. The website calls the device an ink-screen reader; the GitHub URL and legacy update/backup filenames remain compatible. Firmware UI branding also uses kiikoread. The bright-white website includes screen previews, features, version selection, web USB flashing, Bin downloads and an [online user manual](flash/manual.html). Stage it with `python3 tools/stage_public_flash.py _site`; both GitHub Pages and Cloudflare Pages can serve `_site`. The PDF can be regenerated from `docs/user-manual.zh-CN.json` with `tools/build_user_manual.py --font /path/to/a/static-CJK.ttf` (Python ReportLab required).
@@ -12,7 +14,7 @@ An independent reading firmware with publicly available source for the **MindRes
 
 The current interface has Home, Bookshelf, Files, and Settings. It reads EPUB and TXT books from a TF card, remembers reading progress, and supports Wi-Fi, hotspot, or USB file transfer. The online flasher installs the same firmware image as the local `flash/` bundle.
 
-## Current release: rc99
+## Historical release notes: rc99
 
 Restore system text antialiasing, improve charging display, add one/two-press wake and icon-set lock/cancel artwork, trim reading guides to text spans and clean reader entry. Based on 51e7d8d; keep the original rc98 for rollback. See the [changelog](docs/CHANGELOG.md).
 
@@ -72,14 +74,13 @@ kiikoread checks the image project, version, size, and headers before writing th
 
 ## Build from source
 
-The repository keeps one shared `main/` and `components/` source tree; `boards/<board>/` supplies the hardware backend, sdkconfig, partition table and dependency lock. Select the device with `--board pico|metalio47` and a matching ESP-IDF **v6.1** SDK:
+The repository keeps one shared `main/` and `components/` source tree; `boards/<board>/` supplies the hardware backend, sdkconfig, partition table and dependency lock. Select the device with `--board pico` and a matching ESP-IDF **v6.1** SDK:
 
 ```sh
 python3 tools/build_firmware.py --board pico --python /path/to/idf-python/bin/python
-python3 tools/build_firmware.py --board metalio47 --python /path/to/idf-python/bin/python
 ```
 
-Pico is ESP32-S3 (Xtensa), Metalio is ESP32-S31 (RISC-V); each needs its own SDK/toolchain, config and output directory, and the two images are never interchangeable. On Windows the wrapper is `tools\build_board.ps1 -Board pico|metalio47`. See [docs/BOARDS.md](docs/BOARDS.md) for the full build matrix, partition tables and flash offsets. A prebuilt firmware image is provided for the RDP-G01-W only.
+Main builds Pico ESP32-S3 (Xtensa) only. S31 builds remain available from the final archive tag. On Windows the wrapper is `tools\build_board.ps1 -Board pico`. See [docs/BOARDS.md](docs/BOARDS.md) for the full build matrix, partition tables and flash offsets. A prebuilt firmware image is provided for the RDP-G01-W only.
 
 ## Books and fonts
 
@@ -155,6 +156,6 @@ Fresh/reset profiles enter language, Wi-Fi and font setup; existing configured p
 
 Files adds recursive Chinese/pinyin/initials/English search, list/grid views, persistent multiselection, destination-folder moves and confirmed deletion. Moves never overwrite existing targets and failed entries stay selected for retry. Shelf management supports name, last-read and first-added ordering in either direction; pre-existing books register on their first upgraded scan. Wi-Fi remembers eight profiles and marks saved networks; enabling Bluetooth attempts to reconnect the last successfully used paired device.
 
-New books open in standard mode with time/signature/battery at the top, chapter/progress above the visible bottom tools, with Back/title/Favorite below the status row. A centre tap only enters fullscreen; a bottom-edge swipe returns to standard mode and shows tools. Back/title/Favorite and bottom tools appear together and hide together; all tools shortcuts first leave fullscreen. The saved immersive style remains independent. Fullscreen with immersion off shows time/status signature/battery instead of the book title, with the chapter/count/percentage footer; immersion on fills the page with text and keeps only a bottom 3px progress line. Turns retain the selected mode. Header, tools and settings overlay the same body: showing or hiding them leaves text positions, pagination and the current page unchanged. Changing typography or the immersive style still repaginates while preserving the reading anchor. Metadata updates locally after idle. Drivers, power/sleep and reader waveforms follow PR #59; manual and periodic cleanup remain available. Both boards retain separate hardware backends.
+New books open in standard mode with time/signature/battery at the top, chapter/progress above the visible bottom tools, with Back/title/Favorite below the status row. A centre tap only enters fullscreen; a bottom-edge swipe returns to standard mode and shows tools. Back/title/Favorite and bottom tools appear together and hide together; all tools shortcuts first leave fullscreen. The saved immersive style remains independent. Fullscreen with immersion off shows time/status signature/battery instead of the book title, with the chapter/count/percentage footer; immersion on fills the page with text and keeps only a bottom 3px progress line. Turns retain the selected mode. Header, tools and settings overlay the same body: showing or hiding them leaves text positions, pagination and the current page unchanged. Changing typography or the immersive style still repaginates while preserving the reading anchor. Metadata updates locally after idle. Drivers, power/sleep and reader waveforms follow PR #59; manual and periodic cleanup remain available. Main retains the Pico hardware backend.
 
 On Pico, a lock lasting ten minutes enters deep sleep. With single-press unlock selected and no PIN, the power-on press also resumes the saved page, even if the PMU emits no separate short-press event. Double-click and PIN policies remain in effect; charging, alarms and fault resets do not count as key presses.

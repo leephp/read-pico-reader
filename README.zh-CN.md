@@ -1,5 +1,7 @@
 # kiikoread
 
+**维护范围（2026-11-21）：仅 Pico。** S31停止开发支持，[最后支持S31的源码](https://github.com/leephp/read-pico-reader/tree/s31-final-2026-11-21)已归档。Pico RC109 / S31 RC116正式固件及历史下载保持原字节；[构建说明](docs/BOARDS.md)。本次源码清理不发布新固件。
+
 > **使用与授权：** 今后明确标注适用[个人学习许可](licenses/kiikoread-Personal-Study-1.0.txt)的新增原创内容，允许个人学习，未经单独书面授权不得商用。**此政策不重新许可 rc93 及以前的代码或固件，不撤销既有 Apache-2.0 授权，也不覆盖第三方许可。** 完整范围见 [LICENSE](LICENSE)。
 
 项目对外名称统一为 **kiikoread**，网页对设备使用「墨水屏」。保留原 GitHub 仓库网址、升级地址与备份文件名；固件界面也统一使用 kiikoread。纯白官网包含界面预览、功能介绍、版本选择、网页刷机、Bin 下载和[在线使用说明](flash/manual.html)。运行 `python3 tools/stage_public_flash.py _site` 生成公开网站，GitHub Pages 或 Cloudflare Pages 均可使用 `_site` 作为发布目录。说明书从 `docs/user-manual.zh-CN.json` 同源生成，运行 `tools/build_user_manual.py --font /path/to/a/static-CJK.ttf` 可更新 HTML 与 PDF（需要 Python ReportLab）。
@@ -12,7 +14,7 @@
 
 界面包括首页、书架、文件管理和设置；可阅读 TF 卡中的 EPUB、TXT，保存阅读进度，并通过 WiFi、设备热点或 USB 传输文件。
 
-## 当前正式版：rc99
+## 历史版本说明：rc99
 
 基于51e7d8d：恢复系统文字抗锯齿，修复充电显示，新增单击/双击唤醒选项，统一锁屏/取消图标，阅读辅助线随文字范围裁剪，进入阅读完整清理。官网保留原rc98供回退。详见[更新日志](docs/CHANGELOG.md)。
 
@@ -102,14 +104,13 @@ WiFi 和热点传书网页都有「状态栏签名」，保存或清空后写入
 
 ## 自行编译
 
-仓库只有一份共享的 `main/` 与 `components/` 源码；`boards/<板型>/` 提供硬件后端、sdkconfig、分区表和依赖锁。用 `--board pico|metalio47` 选择设备，并准备对应的 ESP-IDF **v6.1** SDK：
+仓库只有一份共享的 `main/` 与 `components/` 源码；`boards/<板型>/` 提供硬件后端、sdkconfig、分区表和依赖锁。用 `--board pico` 选择设备，并准备对应的 ESP-IDF **v6.1** SDK：
 
 ```sh
 python3 tools/build_firmware.py --board pico --python /path/to/idf-python/bin/python
-python3 tools/build_firmware.py --board metalio47 --python /path/to/idf-python/bin/python
 ```
 
-Pico 是 ESP32-S3（Xtensa），Metalio 是 ESP32-S31（RISC-V）；两者需要各自的 SDK/工具链、配置和输出目录，固件不能跨板型刷写。Windows 可运行 `tools\build_board.ps1 -Board pico|metalio47`。完整构建矩阵、分区表和烧录地址见 [docs/BOARDS.md](docs/BOARDS.md)。预编译固件仅面向 RDP-G01-W。
+主线仅构建 Pico ESP32-S3（Xtensa）；S31 构建请使用最后归档标签。Windows 可运行 `tools\build_board.ps1 -Board pico`。完整构建矩阵、分区表和烧录地址见 [docs/BOARDS.md](docs/BOARDS.md)。预编译固件仅面向 RDP-G01-W。
 
 ## 书籍与字体
 
