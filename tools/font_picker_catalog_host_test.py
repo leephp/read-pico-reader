@@ -28,7 +28,6 @@ s = settings.read_text()
 r = reader.read_text()
 paint = branch(s, 'if (s_page == SETTINGS_SYSTEM_FONT)', 'static void render_content(')
 choose = branch(s, 'if (s_page == SETTINGS_SYSTEM_FONT) {', 'static app_redraw_t on_gesture(')
-swipe = branch(s, 'if ((s_page == SETTINGS_SYSTEM_FONT || s_page == SETTINGS_WALLPAPER)', 'static app_redraw_t on_gesture(')
 reader_choose = branch(r, 'if (s_reader_panel == READER_PANEL_FONT_PICKER)', 'static app_redraw_t reader_panel_action(')
 reader_swipe = branch(r, 'if (s_view == READING && s_reader_panel == READER_PANEL_FONT_PICKER &&', 'static app_redraw_t gesture_event(')
 layout = s[s.index('typedef struct {\n    EpdRect size, preview;'):s.index('static system_font_layout_t system_font_layout(')]
@@ -40,32 +39,39 @@ unit = r'''
 #include <string.h>
 #include "ttf_font.h"
 enum{APP_REDRAW_NONE,APP_REDRAW_PAGE,APP_REDRAW_AREA,UI_GESTURE_TAP,UI_GESTURE_SWIPE_U,UI_GESTURE_SWIPE_D,
- SETTINGS_SYSTEM_FONT,SETTINGS_WALLPAPER,READING,READER_PANEL_FONT_PICKER,READER_PANEL_FONT_SETTINGS,UI_ICON_ROTATE_CW};
+ SETTINGS_SYSTEM_FONT,SETTINGS_WALLPAPER,READING,READER_PANEL_FONT_PICKER,READER_PANEL_FONT_SETTINGS,UI_ICON_ROTATE_CW,UI_ICON_CHEVRON_RIGHT};
+enum{UI_PAGER_NONE=-1,UI_PAGER_FIRST,UI_PAGER_PREVIOUS,UI_PAGER_NEXT,UI_PAGER_LAST};
+typedef struct{int type,x0,y0;}ui_gesture_event_t;
+#define SYSTEM_FONT_PAGE_SIZE 8
 typedef int app_redraw_t;
 typedef struct{int unused;}app_ctx_t;
 #define UI_NAV_TOP 1096
 #define UI_GRAY_WHITE 255
 #define UI_GRAY_BLACK 0
 #define SETTINGS_SCROLL_MAX 4000
+#define ESP_LOGI(...) ((void)0)
 #define ESP_OK 0
-static int count,scale=100,s_font_page,s_main_scroll,s_page=SETTINGS_SYSTEM_FONT,s_wallpaper_page,s_wallpaper_count;
+#define ESP_ERR_INVALID_STATE 0x103
+#define ESP_ERR_NO_MEM 0x101
+static int count,scale=100,s_font_page,s_page=SETTINGS_SYSTEM_FONT;
 static int s_view=READING,s_reader_panel=READER_PANEL_FONT_PICKER;
-static bool s_scroll_present_pending,s_font_sync_confirm,capture_rows;
+static bool s_font_sync_confirm,s_font_picker_open,capture_rows;
 static char s_notice[96],s_font_sync_path[192],saved[192];
 static ttf_font_item_t fonts[TTF_FONT_MAX];
 static EpdRect boxes[16];static int rows,selected,previews,restores;
 int ttf_font_count(void){return count;}
+int ttf_font_scan(void){return count;}
 const ttf_font_item_t*ttf_font_item(int i){assert(i>=0&&i<count);return &fonts[i];}
 static unsigned app_settings_system_font_size(void){return scale;}
 static void app_settings_set_system_font_size(unsigned n){scale=n;}
 static const char*app_settings_system_font_path(void){return saved;}
 static const char*app_settings_font_path(void){return "reader.ttf";}
 static void app_settings_set_system_font_path(const char*p){snprintf(saved,sizeof(saved),"%s",p);}
-static void app_font_activate_system(void){}
+static esp_err_t app_font_select_system(const char*p){app_settings_set_system_font_path(p);return ESP_OK;}
 static void ui_text_set_system_scale(bool b){(void)b;}
 static bool ui_rect_hit(EpdRect q,int x,int y){return x>=q.x&&x<q.x+q.width&&y>=q.y&&y<q.y+q.height;}
 static void settings_card(uint8_t*f,EpdRect q,int radius,int fill,int edge){(void)f;(void)radius;(void)fill;(void)edge;
- if(capture_rows){assert(rows<16);boxes[rows++]=q;assert(q.y>=615&&q.y+q.height<UI_NAV_TOP);}}
+ if(capture_rows&&q.x==48&&q.width==588){assert(rows<16);boxes[rows++]=q;assert(q.y>=292&&q.y+q.height<956);}}
 static void section(uint8_t*f,int y,const char*t){(void)f;(void)y;capture_rows=!strcmp(t,"选择字体");}
 static const char*system_font_label(const char*p){return p;}
 static void settings_fit_text(char*p,int px,int width){(void)p;(void)px;(void)width;}
@@ -99,11 +105,15 @@ static void reader_font_choice_finish(void){}
 static app_redraw_t select_reading_font_item(app_ctx_t*ctx,const ttf_font_item_t*p){(void)ctx;selected=(int)(p-fonts);return APP_REDRAW_PAGE;}
 '''
 unit += layout
-for name in ('settings_viewport_end', 'settings_stacked', 'system_font_layout', 'system_font_item_rect'):
+for name in ('ui_pager_rect_at','ui_pager_hit_at','ui_pager_target'):
+    unit += function(name, root/'main/ui/ui_kit.c')+'\n'
+unit += 'static void ui_pager_draw_at(uint8_t*f,const char*t,int page,int pages,bool keys,int pressed,int top){(void)f;(void)t;(void)keys;(void)pressed;assert(page>=0&&page<pages&&top+50<UI_NAV_TOP);}'+'\n'
+
+for name in ('settings_viewport_end', 'settings_stacked', 'system_font_layout', 'system_font_item_rect','draw_system_font_picker','system_font_picker_gesture'):
     unit += function(name, settings) + '\n'
-unit += 'static void system_paint(void){uint8_t pixel=0;uint8_t*fb=&pixel;' + paint + '}\n'
-unit += 'static app_redraw_t system_tap(int x,int y){struct{int x0;}e={x};const typeof(e)*ev=&e;' + choose + 'return APP_REDRAW_NONE;}\n'
-unit += 'static app_redraw_t system_swipe(int type){struct{int type;}e={type};const typeof(e)*ev=&e;' + swipe + 'return APP_REDRAW_NONE;}\n'
+unit += 'static void system_paint(void){capture_rows=true;draw_system_font_picker(NULL);}'+'\n'
+unit += 'static app_redraw_t system_tap(int x,int y){ui_gesture_event_t e={UI_GESTURE_TAP,x,y};return system_font_picker_gesture(&e);}'+'\n'
+unit += 'static app_redraw_t system_page(int action){EpdRect q=ui_pager_rect_at(action,956);return system_tap(q.x+q.width/2,q.y+q.height/2);}'+'\n'
 unit += re.search(r'^#define BOOK_FONT_PAGE .*$', r, re.M)[0] + '\n'
 for name in ('reader_font_picker_top', 'reader_font_pick_rect', 'draw_font_picker'):
     unit += function(name, reader) + '\n'
@@ -117,13 +127,13 @@ int main(void){
   count=counts[c];s_font_page=0;s_page=SETTINGS_SYSTEM_FONT;int visited=0;
   do{
    rows=0;capture_rows=false;system_paint();assert(rows>0);
-   for(int i=0;i<rows;++i){EpdRect q=boxes[i];int index=s_font_page*system_font_layout().slots+i;
+   for(int i=0;i<rows;++i){EpdRect q=boxes[i];int index=s_font_page*SYSTEM_FONT_PAGE_SIZE+i;
     assert(system_tap(q.x+q.width/2,q.y+q.height/2)==APP_REDRAW_PAGE);
     assert(!strcmp(saved,index?fonts[index-1].path:""));++visited;}
-  }while(system_swipe(UI_GESTURE_SWIPE_U)!=APP_REDRAW_NONE);
+  }while(system_page(UI_PAGER_NEXT)!=APP_REDRAW_NONE);
   assert(visited==count+1);int last=s_font_page;
-  assert(system_swipe(UI_GESTURE_SWIPE_U)==APP_REDRAW_NONE&&s_font_page==last);
-  while(system_swipe(UI_GESTURE_SWIPE_D)!=APP_REDRAW_NONE){}assert(s_font_page==0);
+  assert(system_page(UI_PAGER_NEXT)==APP_REDRAW_NONE&&s_font_page==last);
+  while(system_page(UI_PAGER_PREVIOUS)!=APP_REDRAW_NONE){}assert(s_font_page==0);
   s_font_page=0;s_reader_panel=READER_PANEL_FONT_PICKER;visited=0;
   do{
    rows=previews=restores=0;draw_font_picker(NULL);assert(rows==previews&&restores==1);

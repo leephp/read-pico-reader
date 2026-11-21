@@ -108,7 +108,7 @@ def export(build, output, board):
                                           encoding='utf-8')
     (output / 'flash_args').write_text('\n'.join(args) + '\n', encoding='utf-8')
     command = ['python', '-m', 'esptool', '--chip', loader['chip'], '--port', 'PORT',
-               '--before', loader['before'], '--after', loader['after']]
+               '--before', 'usb-reset', '--after', loader['after']]
     if not loader['stub']:
         command.append('--no-stub')
     # 中文：esptool v5 把 flash 选项挪到 write-flash 子命令，且不再解析 @flash_args，

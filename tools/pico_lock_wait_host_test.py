@@ -26,7 +26,8 @@ typedef struct {int ths_mg,duration;}sc7a20h_motion_cfg_t;typedef int sc7a20h_ev
 #define pdMS_TO_TICKS(x) (x)
 enum {APP_WAKE_NONE,APP_WAKE_KEY,APP_WAKE_PICKUP,APP_WAKE_TIMEOUT};
 static int64_t now,key_at;static int fault,suspended,resumed,last_wake,sleeps,epd_retries,epd_parks;
-static int64_t last_epd_retry;
+static int64_t last_epd_retry;static int usb_resumes;
+static void usb_storage_serial_resume(void){++usb_resumes;}
 static bool book_cover_jobs_quiesce(unsigned ms){assert(ms==2000);return fault!=1;}
 static bool ui_avatar_quiesce(unsigned ms){assert(ms==2000);return fault!=2;}
 static bool app_settings_pickup_wake(void){return false;}
@@ -70,9 +71,10 @@ unit+=function('app_light_sleep_wait_timed',ROOT/'main/sleep.c')+'\n'
 unit+=r'''
 int main(void){
  for(fault=0;fault<=7;++fault)for(unsigned real=0;real<2;++real){
-  now=0;key_at=real?5000000:0;suspended=resumed=sleeps=epd_retries=epd_parks=0;last_wake=-1;
+  now=0;key_at=real?5000000:0;suspended=resumed=sleeps=epd_retries=epd_parks=usb_resumes=0;last_wake=-1;
   assert(app_light_sleep_wait_timed(NULL,8000)==(real?APP_WAKE_KEY:APP_WAKE_TIMEOUT));
   assert(now>=5000000&&suspended==1&&resumed==1&&last_wake==(real?APP_WAKE_KEY:APP_WAKE_NONE));
+  assert(usb_resumes==((sleeps>0&&fault!=5)?1:0));
   if(fault==1||fault==2||fault==7)assert(!sleeps);
   if(fault==6)assert(epd_retries==2&&epd_parks==2&&sleeps>0);
   if(fault==7)assert(epd_retries>=5&&epd_parks==epd_retries);

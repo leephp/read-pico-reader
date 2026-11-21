@@ -6,6 +6,7 @@ English: Check every scale, layout/touch bounds, and modal isolation without eag
 """
 from pathlib import Path
 import re, subprocess, tempfile
+from home_cover_cache_host_test import function
 
 root=Path(__file__).resolve().parents[1]
 s=(root/'main/apps/app_device_settings.c').read_text()
@@ -39,6 +40,11 @@ macros='\n'.join(re.findall(r'^#define SETTINGS_(?:ROW_H|WIRELESS_ROWS|DISPLAY_R
 layout=s[s.index('typedef struct {\n    EpdRect size, preview;'):s.index('static system_font_layout_t system_font_layout(')]
 unit=r'''
 #include <assert.h>
+typedef int esp_err_t;
+#define ESP_LOGI(...) ((void)0)
+#define ESP_OK 0
+#define ESP_ERR_INVALID_STATE 0x103
+#define ESP_ERR_NO_MEM 0x101
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -47,6 +53,8 @@ typedef struct{int x,y,width,height;}EpdRect;
 typedef enum{APP_REDRAW_NONE,APP_REDRAW_PAGE}app_redraw_t;
 typedef struct{int type,x0,y0;}ui_gesture_event_t;
 enum{UI_GESTURE_TAP,UI_GESTURE_SWIPE_U};
+enum{UI_PAGER_NONE=-1,UI_PAGER_FIRST,UI_PAGER_PREVIOUS,UI_PAGER_NEXT,UI_PAGER_LAST};
+#define SYSTEM_FONT_PAGE_SIZE 8
 typedef struct{int unused;}app_desc_t;
 typedef struct{const app_desc_t*request_app;}app_ctx_t;
 const app_desc_t app_transfer={0};
@@ -66,14 +74,17 @@ static const char*app_settings_system_font_path(void){return system_path;}
 static const char*app_settings_font_path(void){return reader_path;}
 static void app_settings_set_system_font_path(const char*p){if(!write_fail)snprintf(system_path,sizeof(system_path),"%s",p);}
 static void app_settings_set_font_path(const char*p){++reader_writes;if(!write_fail)snprintf(reader_path,sizeof(reader_path),"%s",p);}
-static void app_font_activate_system(void){++system_activations;}
+static int load_error;
+static esp_err_t app_font_select_system(const char*p){if(load_error)return load_error;if(write_fail)return ESP_ERR_INVALID_STATE;app_settings_set_system_font_path(p);++system_activations;return ESP_OK;}
 static void ui_text_set_system_scale(bool b){assert(b);}
 static int s_font_page,s_main_scroll,s_style_scroll,s_ble_scroll,s_ble_learning;
-static bool s_font_sync_confirm,s_config_confirm,s_boot_pending,s_reset_confirm,s_reset_pending,s_panel_repair_pending;
+static bool s_font_picker_open,s_font_sync_confirm,s_config_confirm,s_boot_pending,s_reset_confirm,s_reset_pending,s_panel_repair_pending;
 static char s_reset_notice[96];
 static char s_font_sync_path[192],s_notice[96],s_ble_notice[96],s_ble_feedback[96];
 static int font_scans,profile_edits,wifi_requests;
-static bool home_full;
+static bool home_full,badges;
+static bool app_settings_shelf_progress_badges(void){return badges;}
+static bool app_settings_set_shelf_progress_badges(bool on){badges=on;return true;}
 static uint8_t wake_presses=1;
 static uint8_t app_settings_wake_presses(void){return wake_presses;}
 static void app_settings_set_wake_presses(uint8_t n){wake_presses=n;}
@@ -89,8 +100,12 @@ static void profile_editor_open(bool signature){assert(signature);++profile_edit
 '''+enum+'\nstatic settings_page_t s_page;\n'+macros+'''
 #define SETTINGS_SCROLL_MAX (SETTINGS_MAINTENANCE_Y+SETTINGS_MAINTENANCE_ROWS*SETTINGS_ROW_H-UI_NAV_REFRESH_END+12)
 static void upgrade_open(void){s_page=SETTINGS_UPGRADE;}
+static void devsync_open(void){s_page=SETTINGS_DEVICE_SYNC;}
 '''+fn('settings_viewport_end')+'\n'+fn('settings_stacked')+'\n'+fn('settings_profile_height')+'\n'+fn('settings_main_row_height')+'\n'+layout+fn('system_font_layout')+'\n'+fn('system_font_item_rect')+'\n'+fn('system_font_sync_button')+'\n'
-unit+='static app_redraw_t font_tap(int x,int y){ui_gesture_event_t e={UI_GESTURE_TAP,x,y};const ui_gesture_event_t*ev=&e;'+modal+choose+'return APP_REDRAW_NONE;}\n'
+for name in ('ui_pager_rect_at','ui_pager_hit_at','ui_pager_target'):
+    unit+=function(name,root/'main/ui/ui_kit.c')+'\n'
+unit+=fn('system_font_picker_gesture')+'\n'
+unit+='static app_redraw_t font_tap(int x,int y){ui_gesture_event_t e={UI_GESTURE_TAP,x,y};const ui_gesture_event_t*ev=&e;if(s_font_picker_open)return system_font_picker_gesture(ev);'+modal+choose+'return APP_REDRAW_NONE;}\n'
 unit+='static app_redraw_t modal_swipe(void){ui_gesture_event_t e={UI_GESTURE_SWIPE_U,400,700};const ui_gesture_event_t*ev=&e;'+modal+'return APP_REDRAW_NONE;}\n'
 unit+='static app_redraw_t main_tap(app_ctx_t*ctx,int x,int y){ui_gesture_event_t e={UI_GESTURE_TAP,x,y};const ui_gesture_event_t*ev=&e;'+main+'}\n'
 unit+=r'''
@@ -100,16 +115,16 @@ int main(void){
    scale=percent;s_font_sync_confirm=false;
    system_font_layout_t l=system_font_layout();
    assert(l.size.y+l.size.height<l.preview_title&&l.preview.y+l.preview.height<l.font_title);
-   assert(l.font_title<l.first&&l.first+l.slots*l.row_height<settings_viewport_end());
-   for(int i=0;i<l.slots;++i){EpdRect r=system_font_item_rect(i);assert(r.y+r.height<settings_viewport_end());if(i)assert(system_font_item_rect(i-1).y+system_font_item_rect(i-1).height<r.y);}
+   assert(l.font_title<l.first&&l.first+l.row_height<settings_viewport_end());
+   for(int i=0;i<SYSTEM_FONT_PAGE_SIZE;++i){EpdRect r=system_font_item_rect(i);assert(r.y+r.height<settings_viewport_end());if(i)assert(system_font_item_rect(i-1).y+system_font_item_rect(i-1).height<r.y);}
    assert(SETTINGS_WIRELESS_Y>=180+settings_profile_height()+70);
    assert(SETTINGS_DISPLAY_Y>SETTINGS_WIRELESS_Y+3*SETTINGS_ROW_H);
    assert(SETTINGS_PERSONAL_Y>SETTINGS_DISPLAY_Y+6*SETTINGS_ROW_H);
    const int tops[]={SETTINGS_WIRELESS_Y,SETTINGS_DISPLAY_Y,SETTINGS_PERSONAL_Y,SETTINGS_MAINTENANCE_Y};
-   const int counts[]={3,7,4,5};
-   const int destinations[][7]={{-1,SETTINGS_BLUETOOTH,SETTINGS_TIME},
-     {SETTINGS_SYSTEM_FONT,SETTINGS_SYSTEM_CONTRAST,SETTINGS_MAIN_REFRESH,-2,SETTINGS_AUTO_LOCK,-2,SETTINGS_POWER_SLEEP},
-     {SETTINGS_SHELF_STYLE,SETTINGS_LOCK_STYLE,SETTINGS_LOCK_PIN,-3},
+   const int counts[]={4,8,5,5};
+   const int destinations[][8]={{-1,SETTINGS_BLUETOOTH,SETTINGS_DEVICE_SYNC,SETTINGS_TIME},
+     {SETTINGS_SYSTEM_FONT,SETTINGS_SYSTEM_CONTRAST,SETTINGS_MAIN_REFRESH,-2,SETTINGS_AUTO_LOCK,-2,SETTINGS_POWER_SLEEP,SETTINGS_LANGUAGE},
+     {SETTINGS_SHELF_STYLE,-2,SETTINGS_LOCK_STYLE,SETTINGS_LOCK_PIN,-3},
      {SETTINGS_UPGRADE,SETTINGS_CONFIG,-4,SETTINGS_BOOT,SETTINGS_FACTORY_RESET}};
    for(int group=0;group<4;++group)for(int i=0;i<counts[group];++i){
      s_page=SETTINGS_MAIN;int center=tops[group]+i*SETTINGS_ROW_H+SETTINGS_ROW_H/2;s_main_scroll=center-500;ctx.request_app=NULL;
@@ -128,19 +143,33 @@ int main(void){
  scale=100;s_page=SETTINGS_SYSTEM_FONT;s_font_page=0;s_main_scroll=0;s_font_sync_confirm=false;
  for(int i=0;i<11;++i){EpdRect r=system_font_layout().size;assert(font_tap(300,r.y+r.height/2)==APP_REDRAW_PAGE);assert(scale==((i+1)%11)*10+100);}
  EpdRect r=system_font_item_rect(1);
- assert(font_tap(300,r.y+r.height/2)==APP_REDRAW_PAGE&&s_font_sync_confirm);
+ // Tapping the heading opens the list without modifying either saved face.
+ assert(font_tap(300,system_font_layout().font_title)==APP_REDRAW_PAGE&&s_font_picker_open);
+ assert(!strcmp(system_path,"/sdcard/fonts/Old.ttf")&&!reader_writes&&!system_activations);
+ assert(font_tap(300,220)==APP_REDRAW_NONE&&s_font_picker_open&&scale==100);
+ assert(font_tap(600,230)==APP_REDRAW_PAGE&&!s_font_picker_open);
+ assert(!strcmp(system_path,"/sdcard/fonts/Old.ttf"));
+ assert(font_tap(300,system_font_layout().first+20)==APP_REDRAW_PAGE&&s_font_picker_open);
+ assert(font_tap(300,r.y+r.height/2)==APP_REDRAW_PAGE&&!s_font_picker_open&&s_font_sync_confirm);
  assert(!strcmp(system_path,fonts[0].path)&&!strcmp(reader_path,"/sdcard/fonts/Reader.ttf")&&!reader_writes&&system_activations==1);
  assert(modal_swipe()==APP_REDRAW_NONE&&s_font_sync_confirm);
  assert(font_tap(300,220)==APP_REDRAW_NONE&&s_font_sync_confirm&&scale==100);
  assert(font_tap(202,720)==APP_REDRAW_PAGE&&!s_font_sync_confirm&&!reader_writes);
+ assert(font_tap(300,system_font_layout().font_title)==APP_REDRAW_PAGE&&s_font_picker_open);
  assert(font_tap(300,r.y+r.height/2)==APP_REDRAW_PAGE&&s_font_sync_confirm);
  write_fail=true;assert(font_tap(481,720)==APP_REDRAW_PAGE&&s_font_sync_confirm&&s_notice[0]&&reader_writes==1);
  write_fail=false;assert(font_tap(481,720)==APP_REDRAW_PAGE&&!s_font_sync_confirm&&reader_writes==2&&!strcmp(reader_path,system_path));
- assert(font_tap(300,r.y+r.height/2)==APP_REDRAW_PAGE&&!s_font_sync_confirm);
+ assert(font_tap(300,system_font_layout().font_title)==APP_REDRAW_PAGE&&s_font_picker_open);
  write_fail=true;unsigned before=system_activations;r=system_font_item_rect(2);
- assert(font_tap(300,r.y+r.height/2)==APP_REDRAW_PAGE&&!s_font_sync_confirm&&system_activations==before&&!strcmp(system_path,fonts[0].path));
- write_fail=false;assert(font_tap(300,r.y+r.height+7)==APP_REDRAW_NONE);
- puts("PASS: 11 scales, all 16 destinations, reachable final row, font-size cycle, modal isolation, opt-in sync, no reading-font load and failed-save retry");
+ assert(font_tap(300,r.y+r.height/2)==APP_REDRAW_PAGE&&s_font_picker_open&&!s_font_sync_confirm&&system_activations==before&&!strcmp(system_path,fonts[0].path));
+ write_fail=false;assert(font_tap(300,r.y+r.height+3)==APP_REDRAW_NONE);
+ load_error=ESP_ERR_NO_MEM;assert(font_tap(300,r.y+r.height/2)==APP_REDRAW_PAGE);
+ assert(s_font_picker_open&&!s_font_sync_confirm&&!strcmp(system_path,fonts[0].path)&&strstr(s_notice,"内存不足"));
+ load_error=123;assert(font_tap(300,r.y+r.height/2)==APP_REDRAW_PAGE);
+ assert(s_font_picker_open&&!s_font_sync_confirm&&strstr(s_notice,"字体加载失败"));
+ load_error=0;assert(font_tap(300,r.y+r.height/2)==APP_REDRAW_PAGE&&!s_font_picker_open&&s_font_sync_confirm);
+ assert(!strcmp(system_path,fonts[1].path));
+ puts("PASS: 11 scales, all settings destinations, reachable final row, font-size cycle, popup opening/cancel, modal isolation, opt-in sync, no reading-font load and failed-save retry");
 }
 '''
 with tempfile.TemporaryDirectory() as folder:

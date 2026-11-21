@@ -157,6 +157,9 @@ int main(int argc,char **argv){
  assert(argc==3&&ttf_get_antialias());status_font(argv[1],argv[2]);const char *text="字体设置";unsigned widths[2];
  for(int face=0;face<2;++face){
   assert(ttf_font_open(argv[face+1])==ESP_OK&&ttf_font_ready()&&!ttf_font_is_builtin());
+  char absent[TTF_FONT_PATH_MAX];snprintf(absent,sizeof(absent),"%s.missing",argv[face+1]);
+  assert(ttf_font_open(absent)==ESP_ERR_NOT_FOUND);
+  assert(ttf_font_ready()&&!strcmp(ttf_font_path(),argv[face+1])&&active_fd==1);
   assert(ttf_font_has_text(text)&&!ttf_font_has_text("\xf4\x8f\xbf\xbf"));
   unsigned initial_opens=opens;size_t resident=live;unsigned old_height=0;
   ui_text_set_system_font(!face);ui_text_set_system_scale(!face);

@@ -54,9 +54,7 @@ static void book_store_notify_changed(void){++changed;}
 static void check_payload(const char *path){FILE *f=fopen(path,"rb");assert(f);char b[8]={0};assert(fread(b,1,7,f)==7&&!strcmp(b,"payload"));assert(!fclose(f));}
 static bool app_book_request_open(const char *path){check_payload(path);strcpy(opened,path);++book_opens;return true;}
 static bool app_image_request_open(const char *path){check_payload(path);strcpy(opened,path);++image_opens;return true;}
-static int ttf_font_open(const char *path){check_payload(path);strcpy(opened,path);++font_opens;return ESP_OK;}
-static void app_settings_set_system_font_path(const char *path){assert(!strcmp(path,opened));}
-static void app_font_activate_system(void){}
+static int app_font_select_system(const char *path){check_payload(path);strcpy(opened,path);++font_opens;return ESP_OK;}
 static bool moved_settings_fit(const char *from,const char *to){assert(!strcmp(from,s_selected.path)&&strcmp(from,to));return true;}
 static void sync_moved_settings(const char *from,const char *to){assert(!strcmp(from,s_selected.path));check_payload(to);}
 static void notify_moved_tree(const char *from,const char *to,unsigned depth){assert(!depth&&!strcmp(from,s_selected.path));check_payload(to);}
@@ -133,8 +131,7 @@ int main(void){
 with tempfile.TemporaryDirectory(prefix='file-browser-names-') as folder:
     work = Path(folder)
     (work/'test.c').write_text(unit)
-    marker = ROOT / '.kiiko-source-view.json'
-    boards = (int(json.loads(marker.read_text())['board'] == 'metalio47'),) if marker.exists() else (0, 1)
+    boards = (0,)  # Mainline supports Pico only.
     for board in boards:
         output = work/f'board-{board}'
         subprocess.run(['cc', '-std=gnu11', '-g', '-Wall', '-Wextra', '-Werror',

@@ -14,11 +14,16 @@ unit = r'''
 #include <string.h>
 #include <sys/stat.h>
 #define ESP_OK 0
+#define ESP_FAIL -1
+#define ESP_ERR_INVALID_ARG 0x102
+#define ESP_ERR_INVALID_STATE 0x103
+typedef int esp_err_t;
 #define TTF_FONT_PATH_MAX 288
 #define TTF_FONT_BUILTIN "builtin"
 typedef struct {char path[288];bool reading;} app_lock_font_t;
 typedef struct {char path[288];} ttf_font_item_t;
-static bool s_reading,system_face,system_scale,recovery;
+static bool s_reading,system_face,system_scale,recovery,write_fail;
+static char s_confirmed_system[288];
 static bool bitmap_reading;
 static bool ttf_set_reader_context(bool reading){bool changed=bitmap_reading!=reading;bitmap_reading=reading;return changed;}
 static char s_rejected[TTF_FONT_PATH_MAX],corrupt[288];
@@ -40,6 +45,7 @@ static int mock_stat(const char *path,struct stat *st){
 #define stat(path,st) mock_stat(path,st)
 static bool pico_boot_recovery(void){return recovery;}
 static const char *app_settings_system_font_path(void){return chosen;}
+static void app_settings_set_system_font_path(const char *p){if(!write_fail)snprintf(chosen,sizeof(chosen),"%s",p);}
 static const char *app_settings_font_path(void){return reader;}
 static const char *app_settings_fonts_dir(void){return "/absent/fonts";}
 static bool ttf_font_ready(void){return true;}
@@ -56,8 +62,8 @@ static void ui_text_set_system_scale(bool on){system_scale=on;}
 static void ui_nav_status_font_context(bool reading,bool changed){(void)changed;assert(reading==s_reading);
 }
 '''
-for name in ('font_file', 'system_path', 'activate', 'app_font_activate_system', 'app_font_activate_reading',
-             'app_font_retry_active', 'app_font_begin_lock', 'app_font_end_lock'):
+for name in ('font_file', 'system_recovery', 'system_path', 'activate', 'app_font_activate_system', 'app_font_activate_reading',
+             'app_font_select_system', 'app_font_retry_active', 'app_font_begin_lock', 'app_font_end_lock'):
     unit += function(name, FONT) + '\n'
 unit += r'''
 int main(void){
@@ -97,6 +103,32 @@ int main(void){
  missing[0]=0;
  strcpy(chosen,"/fonts/system.ttf");recovery=true;
  app_font_begin_lock(&saved);assert(ttf_font_is_builtin()&&!system_face);app_font_end_lock(&saved);
+
+ // Recovery must suppress automatic imports but permit a validated explicit choice.
+ assert(!system_face && ttf_font_is_builtin());
+ assert(app_font_select_system("/fonts/New.ttf")==ESP_OK);
+ assert(recovery && system_face && !strcmp(chosen,"/fonts/New.ttf") && !strcmp(active,chosen));
+ app_font_begin_lock(&saved);app_font_end_lock(&saved);assert(system_face&&!strcmp(active,chosen));
+ app_font_activate_reading();assert(ttf_font_is_builtin());
+ app_font_activate_system();assert(system_face&&!strcmp(active,chosen));
+ // Failed loads and failed saves keep the old persisted and actual face.
+ strcpy(corrupt,"/fonts/Bad.ttf");
+ assert(app_font_select_system(corrupt)!=ESP_OK && !strcmp(chosen,"/fonts/New.ttf") && !strcmp(active,chosen));
+ strcpy(missing,"/fonts/Missing.ttf");
+ assert(app_font_select_system(missing)!=ESP_OK && !strcmp(active,chosen));missing[0]=0;
+ write_fail=true;
+ assert(app_font_select_system("/fonts/Other.ttf")==ESP_ERR_INVALID_STATE);
+ assert(!strcmp(chosen,"/fonts/New.ttf")&&!strcmp(active,chosen)&&system_face);write_fail=false;
+ // Unchanged file metadata must not suppress manual retry after transient failure.
+ strcpy(s_rejected,"/fonts/Retry.ttf");s_rejected_mtime=1;s_rejected_size=100;
+ assert(app_font_select_system("/fonts/Retry.ttf")==ESP_OK && !s_rejected[0] && system_face);
+ assert(!strcmp(active,chosen));
+ assert(app_font_select_system(NULL)==ESP_ERR_INVALID_ARG);
+ assert(app_font_select_system("")==ESP_OK && !chosen[0] && !system_face && ttf_font_is_builtin());
+ // Normal reboot restores saved choices; recovery restart still suppresses automatic loading.
+ recovery=false;assert(app_font_select_system("/fonts/New.ttf")==ESP_OK);
+ s_confirmed_system[0]=0;active[0]=0;app_font_activate_system();assert(system_face&&!strcmp(active,chosen));
+ recovery=true;app_font_activate_system();assert(!system_face&&ttf_font_is_builtin());
  app_font_begin_lock(NULL);app_font_end_lock(NULL);
  puts("PASS: tickets from reader/system use the same system face/scale; wake restores reader context; missing card/font falls back safely without overwriting saved choices");
 }

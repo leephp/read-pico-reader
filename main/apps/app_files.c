@@ -1037,11 +1037,11 @@ static void open_selected(app_ctx_t *ctx) {
         extern const app_desc_t app_image;
         if (app_image_request_open(s_selected.path)) ctx->request_app = &app_image;
     } else if (!strcasecmp(ext, ".ttf") || !strcasecmp(ext, ".otf")) {
-        if (ttf_font_open(s_selected.path) == ESP_OK) {
-            app_settings_set_system_font_path(s_selected.path);
-            app_font_activate_system();
+        esp_err_t err = app_font_select_system(s_selected.path);
+        if (err == ESP_OK) {
             snprintf(s_message, sizeof(s_message), "已设为系统字体");
-        } else snprintf(s_message, sizeof(s_message), "字体无法加载");
+        } else snprintf(s_message, sizeof(s_message), "%s",
+            err == ESP_ERR_INVALID_STATE ? "保存失败，请重试" : "字体无法加载");
     } else snprintf(s_message, sizeof(s_message), "没有可用的打开方式");
 }
 

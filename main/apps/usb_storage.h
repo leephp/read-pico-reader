@@ -17,6 +17,10 @@ bool usb_storage_connected(void);
 /// Force a host-visible USB detach/attach when the host may still be bound to serial.
 esp_err_t usb_storage_reattach(void);
 
-/// 开机回收串口/JTAG 所需的共享内部 PHY。
-/// / Reclaim the shared internal PHY for Serial/JTAG at boot.
+/// 无损恢复串口 PHY 和上拉；TinyUSB 占用期间不操作。
+/// Restore the serial PHY and pull-up without detaching; leave TinyUSB ownership intact.
 void usb_storage_phy_init(void);
+
+/// 浅睡退出后重新枚举串口，不在普通轮询中调用。
+/// Re-enumerate after light sleep, never from ordinary polling.
+void usb_storage_serial_resume(void);

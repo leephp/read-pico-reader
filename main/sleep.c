@@ -35,6 +35,7 @@
 #include "book_cover_jobs.h"
 
 #include "sleep.h"
+#include "apps/usb_storage.h"
 #include "boot_state.h"
 #include "lock_pin.h"
 #include "lock_screen.h"
@@ -420,6 +421,7 @@ app_wake_source_t app_light_sleep_wait_timed(sc7a20h_handle_t acc, uint32_t time
     int64_t ioe_low_since_us = 0;
     int64_t epd_check_after_us = 0;
     bool epd_off_confirmed = false;
+    bool usb_slept = false;
     unsigned sleep_errors = 0;
     esp_err_t last_sleep_error = ESP_OK;
     int64_t last_sleep_error_log_ms = 0;
@@ -504,6 +506,7 @@ app_wake_source_t app_light_sleep_wait_timed(sc7a20h_handle_t acc, uint32_t time
         }
         int64_t t0 = esp_timer_get_time();
         esp_err_t sleep_error = esp_light_sleep_start();
+        usb_slept |= sleep_error == ESP_OK;
         int64_t dt_ms = (esp_timer_get_time() - t0) / 1000;
         read_pico_clear_ioe_int();
         if (lock_wait_key()) {
@@ -557,6 +560,7 @@ app_wake_source_t app_light_sleep_wait_timed(sc7a20h_handle_t acc, uint32_t time
     }
     lock_hint_finish(wake!=APP_WAKE_KEY);
     periph_resume();
+    if (usb_slept) usb_storage_serial_resume();
     app_settings_set_last_wake((uint8_t)(wake == APP_WAKE_TIMEOUT ? APP_WAKE_NONE : wake));
     return wake;
 }

@@ -210,6 +210,8 @@ static char s_ble_feedback[64];
 static int s_font_page, s_wallpaper_page;
 static bool s_sync_pending;
 static bool s_font_sync_confirm;
+static bool s_font_picker_open;
+#define SYSTEM_FONT_PAGE_SIZE 8
 static char s_font_sync_path[TTF_FONT_PATH_MAX];
 static bool s_config_confirm;
 // 屏幕修复：点一下就开始。整屏盲刷要几秒，活儿交给 tick——不能在触摸回调里做。
@@ -410,18 +412,69 @@ static const char *system_font_label(const char *path) {
 }
 typedef struct {
     EpdRect size, preview;
-    int preview_title, font_title, first, row_height, slots;
+    int preview_title, font_title, first, row_height;
 } system_font_layout_t;
 static system_font_layout_t system_font_layout(void) {
     system_font_layout_t l = settings_stacked()
-        ? (system_font_layout_t){{36,197,612,183},{36,471,612,216},413,722,785,142,2}
-        : (system_font_layout_t){{36,197,612,100},{36,379,612,154},322,560,615,99,4};
-    l.slots=(settings_viewport_end()-42-l.first)/l.row_height;
+        ? (system_font_layout_t){{36,197,612,183},{36,471,612,216},413,722,785,142}
+        : (system_font_layout_t){{36,197,612,100},{36,379,612,154},322,560,615,99};
     return l;
 }
 static EpdRect system_font_item_rect(int slot) {
-    system_font_layout_t l = system_font_layout();
-    return (EpdRect){36,l.first + slot * l.row_height,612,l.row_height - 16};
+    return (EpdRect){48,292+slot*78,588,70};
+}
+static void draw_system_font_picker(uint8_t *fb) {
+    settings_card(fb,(EpdRect){24,180,636,900},24,UI_GRAY_WHITE,0x58);
+    ui_text_fixed_vc(fb,48,230,32,"选择字体",EPD_DRAW_ALIGN_LEFT,false);
+    settings_card(fb,(EpdRect){552,202,84,56},16,UI_GRAY_WHITE,0x70);
+    ui_text_box(fb,(EpdRect){552,202,84,56},20,"取消",EPD_DRAW_ALIGN_CENTER,false);
+    const char *selected=app_settings_system_font_path();
+    int count=ttf_font_count(),first=s_font_page*SYSTEM_FONT_PAGE_SIZE;
+    for(int slot=0;slot<SYSTEM_FONT_PAGE_SIZE && first+slot<=count;++slot) {
+        int index=first+slot;
+        const ttf_font_item_t *item=index?ttf_font_item(index-1):NULL;
+        bool active=item?!strcmp(selected,item->path):!selected[0];
+        EpdRect box=system_font_item_rect(slot);
+        settings_card(fb,box,16,active?0xe0:UI_GRAY_WHITE,0x70);
+        ui_text_box(fb,(EpdRect){box.x+16,box.y,box.width-64,box.height},26,
+                    item?system_font_label(item->path):"思源黑体（内建）",EPD_DRAW_ALIGN_LEFT,false);
+        if(active)epd_fill_circle(613,box.y+box.height/2,6,UI_GRAY_BLACK,fb);
+    }
+    int pages=(count+SYSTEM_FONT_PAGE_SIZE)/SYSTEM_FONT_PAGE_SIZE;
+    char label[24];snprintf(label,sizeof(label),"%d / %d",s_font_page+1,pages);
+    ui_pager_draw_at(fb,label,s_font_page,pages,false,UI_PAGER_NONE,956);
+    if(s_notice[0])ui_text_box(fb,(EpdRect){48,1018,588,50},18,s_notice,EPD_DRAW_ALIGN_LEFT,false);
+}
+static app_redraw_t system_font_picker_gesture(const ui_gesture_event_t *ev) {
+    if(ev->type!=UI_GESTURE_TAP)return APP_REDRAW_NONE;
+    if(ui_rect_hit((EpdRect){552,202,84,56},ev->x0,ev->y0)) {
+        s_font_picker_open=false;s_notice[0]=0;return APP_REDRAW_PAGE;
+    }
+    int action=ui_pager_hit_at(ev->x0,ev->y0,956);
+    if(action!=UI_PAGER_NONE) {
+        int next=ui_pager_target(action,s_font_page,(ttf_font_count()+SYSTEM_FONT_PAGE_SIZE)/SYSTEM_FONT_PAGE_SIZE);
+        if(next==s_font_page)return APP_REDRAW_NONE;
+        s_font_page=next;s_notice[0]=0;return APP_REDRAW_PAGE;
+    }
+    for(int slot=0;slot<SYSTEM_FONT_PAGE_SIZE;++slot) {
+        if(!ui_rect_hit(system_font_item_rect(slot),ev->x0,ev->y0))continue;
+        int index=s_font_page*SYSTEM_FONT_PAGE_SIZE+slot;
+        if(index>ttf_font_count())return APP_REDRAW_NONE;
+        const ttf_font_item_t *item=index?ttf_font_item(index-1):NULL;
+        if(index&&!item)return APP_REDRAW_NONE;
+        snprintf(s_font_sync_path,sizeof(s_font_sync_path),"%s",item?item->path:"");
+        esp_err_t err=app_font_select_system(s_font_sync_path);
+        ESP_LOGI(TAG,"font select index=%d path=%s result=%s active=%s",index,s_font_sync_path,esp_err_to_name(err),ttf_font_path());
+        if(err!=ESP_OK) {
+            const char *message=err==ESP_ERR_INVALID_STATE?"保存失败，请重试":
+                err==ESP_ERR_NO_MEM?"内存不足，请稍后重试":"字体加载失败，请检查文件";
+            snprintf(s_notice,sizeof(s_notice),"%s",message);return APP_REDRAW_PAGE;
+        }
+        s_notice[0]=0;s_font_picker_open=false;
+        s_font_sync_confirm=strcmp(app_settings_font_path(),s_font_sync_path)!=0;
+        return APP_REDRAW_PAGE;
+    }
+    return APP_REDRAW_NONE;
 }
 static EpdRect system_font_sync_button(bool sync) { return (EpdRect){sync ? 351 : 72,683,261,74}; }
 static void draw_system_font_sync(uint8_t *fb) {
@@ -1264,24 +1317,15 @@ static void render_content(app_ctx_t *ctx, uint8_t *fb) {
         ui_text_vc(fb,60,l.preview.y+(settings_stacked()?68:51),29,"阅读，让时间慢下来",EPD_DRAW_ALIGN_LEFT,false);
         ui_text_vc(fb,60,l.preview.y+(settings_stacked()?151:107),25,"Aa 123",EPD_DRAW_ALIGN_LEFT,false);
         section(fb,l.font_title,"选择字体");
-        const char *selected = app_settings_system_font_path();
-        int count = ttf_font_count(), first = s_font_page*l.slots;
-        for (int slot=0;slot<l.slots && first+slot<=count;++slot) {
-            int index=first+slot;
-            const ttf_font_item_t *item=index?ttf_font_item(index-1):NULL;
-            bool active=item?!strcmp(selected,item->path):!selected[0];
-            EpdRect box=system_font_item_rect(slot);
-            settings_card(fb,box,20,active?0xe0:UI_GRAY_WHITE,0x70);
-            char label[TTF_FONT_NAME_MAX];
-            snprintf(label,sizeof(label),"%s",item?system_font_label(item->path):"思源黑体（内建）");
-            settings_fit_text(label,26,box.width-100);
-            ui_text_vc(fb,60,box.y+box.height/2,26,label,EPD_DRAW_ALIGN_LEFT,false);
-            if (active) epd_fill_circle(613,box.y+box.height/2,6,UI_GRAY_BLACK,fb);
-        }
-        char pages[24];snprintf(pages,sizeof(pages),"%d / %d",s_font_page+1,(count+l.slots)/l.slots);
-        ui_text_fixed_vc(fb,648,settings_viewport_end()-16,18,pages,EPD_DRAW_ALIGN_RIGHT,false);
-        if (s_notice[0]) ui_text_fixed_vc(fb,42,settings_viewport_end()-16,18,s_notice,EPD_DRAW_ALIGN_LEFT,false);
+        EpdRect choice={36,l.first,612,l.row_height-16};
+        settings_card(fb,choice,20,UI_GRAY_WHITE,0x70);
+        const char *selected=app_settings_system_font_path();
+        ui_text_box(fb,(EpdRect){choice.x+20,choice.y,choice.width-80,choice.height},26,
+                    selected[0]?system_font_label(selected):"思源黑体（内建）",EPD_DRAW_ALIGN_LEFT,false);
+        ui_draw_icon(fb,612,choice.y+choice.height/2,28,UI_ICON_CHEVRON_RIGHT,0x38);
+        if(s_notice[0])ui_text_box(fb,(EpdRect){36,1018,612,50},18,s_notice,EPD_DRAW_ALIGN_LEFT,false);
         settings_navigation(fb);
+        if (s_font_picker_open) draw_system_font_picker(fb);
         if (s_font_sync_confirm) draw_system_font_sync(fb);
         return;
     }
@@ -2078,7 +2122,7 @@ static void on_enter(app_ctx_t *ctx) {
     s_bookmark_picker=false;bookmark_preview_release();
     s_wallpaper_confirm = s_wallpaper_preview_ok = false;
     s_sync_pending = false;
-    s_font_sync_confirm = false; s_font_sync_path[0] = 0;
+    s_font_picker_open=false;s_font_sync_confirm = false; s_font_sync_path[0] = 0;
     s_config_confirm = false;
     s_devsync_role = -1; s_devsync_code = 0; s_devsync_percent = -1;
     s_devsync_state = KIIKO_SYNC_IDLE; s_devsync_done_ms = 0; s_devsync_start_error = ESP_OK;
@@ -2403,6 +2447,7 @@ static app_redraw_t reset_gesture(app_ctx_t *ctx,const ui_gesture_event_t *ev) {
 }
 
 static app_redraw_t on_gesture(app_ctx_t *ctx, const ui_gesture_event_t *ev) {
+    if (s_page==SETTINGS_SYSTEM_FONT && s_font_picker_open) return system_font_picker_gesture(ev);
     if (s_page==SETTINGS_SYSTEM_FONT && s_font_sync_confirm) {
         if (ev->type!=UI_GESTURE_TAP) return APP_REDRAW_NONE;
         for (int i=0;i<2;++i) {
@@ -2534,11 +2579,11 @@ static app_redraw_t on_gesture(app_ctx_t *ctx, const ui_gesture_event_t *ev) {
         s_wallpaper_page = next / 8;
         return APP_REDRAW_PAGE;
     }
-    if ((s_page == SETTINGS_SYSTEM_FONT || s_page == SETTINGS_WALLPAPER) &&
+    if (s_page == SETTINGS_WALLPAPER &&
         (ev->type == UI_GESTURE_SWIPE_U || ev->type == UI_GESTURE_SWIPE_D)) {
-        int *page = s_page == SETTINGS_SYSTEM_FONT ? &s_font_page : &s_wallpaper_page;
-        int count = s_page == SETTINGS_SYSTEM_FONT ? ttf_font_count() + 1 : s_wallpaper_count;
-        int slots=s_page==SETTINGS_SYSTEM_FONT?system_font_layout().slots:8;
+        int *page = &s_wallpaper_page;
+        int count = s_wallpaper_count;
+        int slots=8;
         int pages = count > 0 ? (count + slots - 1) / slots : 1;
         int old = *page;
         if (ev->type == UI_GESTURE_SWIPE_U && *page + 1 < pages) ++*page;
@@ -2664,19 +2709,13 @@ static app_redraw_t on_gesture(app_ctx_t *ctx, const ui_gesture_event_t *ev) {
             if (s_main_scroll>SETTINGS_SCROLL_MAX) s_main_scroll=SETTINGS_SCROLL_MAX;
             ui_text_set_system_scale(true);s_notice[0]=0;return APP_REDRAW_PAGE;
         }
-        for (int slot=0;slot<l.slots;++slot) {
-            if (!ui_rect_hit(system_font_item_rect(slot),ev->x0,y)) continue;
-            int index=s_font_page*l.slots+slot;
-            if (index>ttf_font_count()) return APP_REDRAW_NONE;
-            const ttf_font_item_t *item=index?ttf_font_item(index-1):NULL;
-            if (index && !item) return APP_REDRAW_NONE;
-            snprintf(s_font_sync_path,sizeof(s_font_sync_path),"%s",item?item->path:"");
-            app_settings_set_system_font_path(s_font_sync_path);
-            if (strcmp(app_settings_system_font_path(),s_font_sync_path)) {
-                snprintf(s_notice,sizeof(s_notice),"保存失败，请重试");return APP_REDRAW_PAGE;
+        if(ui_rect_hit((EpdRect){36,l.font_title-24,612,l.first+l.row_height-l.font_title+24},ev->x0,y)) {
+            ttf_font_scan();s_font_page=0;s_notice[0]=0;s_font_picker_open=true;
+            const char *selected=app_settings_system_font_path();
+            for(int i=0;i<ttf_font_count();++i) {
+                const ttf_font_item_t *item=ttf_font_item(i);
+                if(item&&!strcmp(selected,item->path)){s_font_page=(i+1)/SYSTEM_FONT_PAGE_SIZE;break;}
             }
-            app_font_activate_system();s_notice[0]=0;
-            s_font_sync_confirm=strcmp(app_settings_font_path(),s_font_sync_path)!=0;
             return APP_REDRAW_PAGE;
         }
         return APP_REDRAW_NONE;
@@ -2995,6 +3034,7 @@ static app_redraw_t on_gesture(app_ctx_t *ctx, const ui_gesture_event_t *ev) {
 static app_redraw_t on_key(app_ctx_t *ctx, int key) {
     settings_drag_reset();
     s_reset_confirm=s_reset_pending=false;
+    if(s_font_picker_open) {s_font_picker_open=false;s_notice[0]=0;return APP_REDRAW_PAGE;}
     if(s_font_sync_confirm) {
         s_font_sync_confirm=false;s_notice[0]=0;
         if(key!=1)return APP_REDRAW_PAGE;
@@ -3030,7 +3070,7 @@ static void settings_exit(app_ctx_t *ctx) {
     settings_drag_reset();
     s_reset_confirm=s_reset_pending=false;
     bookmark_preview_release();s_bookmark_picker=false;
-    s_font_sync_confirm=false;s_font_sync_path[0]=0;
+    s_font_picker_open=false;s_font_sync_confirm=false;s_font_sync_path[0]=0;
     pin_setup_close();
     devsync_leave();
     s_collage_prepare_pending = false;
@@ -3040,7 +3080,7 @@ static void settings_exit(app_ctx_t *ctx) {
 static void on_before_lock(app_ctx_t *ctx) {
     settings_drag_reset();
     s_reset_confirm=s_reset_pending=false;
-    s_font_sync_confirm=false;s_font_sync_path[0]=0;
+    s_font_picker_open=false;s_font_sync_confirm=false;s_font_sync_path[0]=0;
     if (s_page == SETTINGS_PIN_ENTRY) { pin_setup_close(); s_page = SETTINGS_LOCK_PIN; }
     devsync_leave();
     s_upgrade_job = UPGRADE_JOB_NONE;
@@ -3057,7 +3097,7 @@ static void settings_media_ready(app_ctx_t *ctx) { settings_drag_reset(); (void)
 static bool settings_edge_back(app_ctx_t *ctx) {
     (void)ctx;
     return s_page != SETTINGS_MAIN && !s_reset_pending && !s_local_pending &&
-        !s_upgrade_restart && !s_pin_pending && !s_font_sync_confirm;
+        !s_upgrade_restart && !s_pin_pending && !s_font_sync_confirm && !s_font_picker_open;
 }
 static bool settings_back_swipe_area(app_ctx_t *ctx,const ui_gesture_event_t *event) {
     (void)ctx;
@@ -3066,7 +3106,7 @@ static bool settings_back_swipe_area(app_ctx_t *ctx,const ui_gesture_event_t *ev
 static bool main_page_visible(app_ctx_t *ctx) { (void)ctx; return s_page == SETTINGS_MAIN; }
 static bool settings_navigation_enabled(app_ctx_t *ctx) {
     (void)ctx;
-    return !s_reset_pending && !s_local_pending && !s_upgrade_restart && !s_pin_pending && !s_boot_pending;
+    return !s_reset_pending && !s_local_pending && !s_upgrade_restart && !s_pin_pending && !s_boot_pending && !s_font_picker_open && !s_font_sync_confirm;
 }
 static bool settings_present(app_ctx_t *ctx, app_redraw_t redraw) {
     if(redraw==APP_REDRAW_FULL||redraw==APP_REDRAW_PAGE)settings_drag_reset();

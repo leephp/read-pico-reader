@@ -42,3 +42,9 @@ python3 tools/pr59_driver_baseline_host_test.py
 
 CI只构建和测试Pico。历史S31安装器仍做独立校验，防止保留入口失效。历史固件附件按原SHA-256校验；不能用当前同号构建替换正式字节。
 CI builds/tests Pico only. Historical S31 installers retain separate checks to protect existing entries. Published attachments retain their original SHA-256; never replace them with current same-version builds.
+
+### Pico 原生 USB 重连 / Native USB reconnection
+
+本地包使用 `usb-reset` 进入下载模式。若复位时端口短暂消失或编号改变，使用 ESP-IDF Python 环境运行 `tools/pico_esptool.py --serial <USB序列号> -- <esptool命令及参数>`。序列号可由 `python -m serial.tools.list_ports -v` 查看。工具只重试连接，并按精确序列号重找同一设备；开始写入后不自动重试。写入地址与文件必须来自本次构建的 `flash_args`，日常本地应用测试只写其中的应用项，保留其他分区。
+
+Local bundles enter download mode with `usb-reset`. For disappearing or renumbered ports, run `tools/pico_esptool.py --serial <USB-serial-number> -- <esptool-command-and-arguments>` in the ESP-IDF Python environment. Find the serial number with `python -m serial.tools.list_ports -v`. Only connection is retried, matching the exact device identity; writes are never automatically retried. Use addresses and files from the current build's `flash_args`; local application testing writes only its application entry, preserving other partitions.

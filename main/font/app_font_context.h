@@ -18,5 +18,7 @@ void app_font_begin_lock(app_lock_font_t *saved);
 void app_font_end_lock(const app_lock_font_t *saved);
 
 bool app_font_activate_system(void);
+/// 加载成功才保存；失败恢复原选择，手动选择允许重试。/ Save only a loaded face; restore on failure and allow explicit retries.
+esp_err_t app_font_select_system(const char *path);
 bool app_font_activate_reading(void);
 bool app_font_retry_active(void);

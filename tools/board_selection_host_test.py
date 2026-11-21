@@ -163,6 +163,7 @@ def real_build_tests(work):
                 assert len(data) == part['size']
                 assert hashlib.sha256(data).hexdigest() == part['sha256']
             assert '--no-stub' not in (package / 'flash-command.txt').read_text()
+            assert '--before usb-reset' in (package / 'flash-command.txt').read_text()
             archive = package.parent / f"kiikoread-{board}-{info['version']}-USB.zip"
             with zipfile.ZipFile(archive) as zipped:
                 assert json.loads(zipped.read('verification.json')) == json.loads(json.dumps(result))

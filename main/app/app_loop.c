@@ -602,6 +602,7 @@ static void ensure_wake_on_charge(void) {
 }
 static void usb_msc_housekeeping(app_ctx_t *ctx, const app_desc_t *current) {
     if (!usb_storage_active()) {
+        usb_storage_phy_init();
         s_usb_gone_since_ms = 0;
         s_usb_orphan_retry_ms = 0;
         s_usb_ever_mounted = false;

@@ -38,15 +38,18 @@ static bool s_cleanup_pending;
 // MSC 用完内部 PHY 后，把它交还给串口/JTAG，电脑才能再次自动刷写。
 // Return the shared internal PHY to Serial/JTAG after MSC so flashing can reconnect.
 static void restore_serial_phy(void) {
-    if (s_serial_phy) return;
-    const usb_phy_config_t config = {
-        .controller = USB_PHY_CTRL_SERIAL_JTAG,
-        .target = USB_PHY_TARGET_INT,
-    };
-    esp_err_t err = usb_new_phy(&config, &s_serial_phy);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "USB Serial/JTAG restore failed: %s", esp_err_to_name(err));
-        return;
+    // Never steal the shared PHY while TinyUSB still owns it, including failed teardown.
+    if (s_usb_ready) return;
+    if (!s_serial_phy) {
+        const usb_phy_config_t config = {
+            .controller = USB_PHY_CTRL_SERIAL_JTAG,
+            .target = USB_PHY_TARGET_INT,
+        };
+        esp_err_t err = usb_new_phy(&config, &s_serial_phy);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "USB Serial/JTAG restore failed: %s", esp_err_to_name(err));
+            return;
+        }
     }
     // usb_new_phy() 只切 mux 和 pad；S3 上不会设置 D+ 上拉。
     // 退出 U 盘模式后必须显式恢复，串口才会重新枚举。
@@ -86,6 +89,14 @@ bool usb_storage_active(void) { return s_active; }
 bool usb_storage_connected(void) { return s_active && !s_cleanup_pending && tud_mounted(); }
 
 void usb_storage_phy_init(void) {
+    restore_serial_phy();
+}
+
+void usb_storage_serial_resume(void) {
+    if (s_usb_ready) return;
+    // Light sleep leaves D+ high while the controller is unresponsive; announce a fresh attach.
+    usb_serial_jtag_ll_phy_enable_pad(false);
+    vTaskDelay(pdMS_TO_TICKS(20));
     restore_serial_phy();
 }
 
