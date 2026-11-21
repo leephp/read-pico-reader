@@ -586,6 +586,8 @@ static unsigned s_media_recovery_attempts;
 // MSC is opt-in; return the PHY to Serial/JTAG when the host goes away or the page is gone.
 static int64_t s_usb_gone_since_ms;
 static int64_t s_usb_orphan_retry_ms;
+static bool s_usb_ever_mounted;
+static bool s_usb_reattach_done;
 // 用户要求“插上线就进串口”：PMU 默认不因充电接入开机，这里在首次握手后改为开机。
 // Plugging USB should enumerate Serial/JTAG; the PMU defaults to charge-only, so enable AC-on once.
 static bool s_ac_on_checked;
@@ -599,16 +601,34 @@ static void ensure_wake_on_charge(void) {
     ESP_LOGI(TAG, "AC-on set -> %s (was %u)", esp_err_to_name(err), (unsigned)s->config.wake_on_charge);
 }
 static void usb_msc_housekeeping(app_ctx_t *ctx, const app_desc_t *current) {
-    if (!usb_storage_active()) { s_usb_gone_since_ms = 0; s_usb_orphan_retry_ms = 0; return; }
+    if (!usb_storage_active()) {
+        s_usb_gone_since_ms = 0;
+        s_usb_orphan_retry_ms = 0;
+        s_usb_ever_mounted = false;
+        s_usb_reattach_done = false;
+        return;
+    }
     if (!usb_storage_connected()) {
         if (!s_usb_gone_since_ms) { s_usb_gone_since_ms = ctx->now_ms ? ctx->now_ms : 1; return; }
-        if (ctx->now_ms - s_usb_gone_since_ms < 8000) return;
+        // 首次进入时主机可能仍绑定串口设备；2 秒后强制一次断开/重连。
+        // A first attach can be missed; retry once after two seconds.
+        if (!s_usb_reattach_done && ctx->now_ms - s_usb_gone_since_ms >= 2000) {
+            s_usb_reattach_done = true;
+            esp_err_t err = usb_storage_reattach();
+            ESP_LOGI(TAG, "USB not enumerated, reattach -> %s", esp_err_to_name(err));
+            return;
+        }
+        // 首次枚举给主机 30 秒；成功挂载后再掉线维持 8 秒。
+        // Allow 30 s for the first enumeration; keep 8 s after a successful mount.
+        const int64_t grace_ms = s_usb_ever_mounted ? 8000 : 30000;
+        if (ctx->now_ms - s_usb_gone_since_ms < grace_ms) return;
         s_usb_gone_since_ms = 0;
         esp_err_t err = usb_storage_stop();
         ESP_LOGI(TAG, "USB host gone, stop MSC -> %s", esp_err_to_name(err));
         return;
     }
     s_usb_gone_since_ms = 0;
+    s_usb_ever_mounted = true;
     if (current != &app_transfer && ctx->now_ms >= s_usb_orphan_retry_ms) {
         s_usb_orphan_retry_ms = ctx->now_ms + 1000;
         esp_err_t err = usb_storage_stop();

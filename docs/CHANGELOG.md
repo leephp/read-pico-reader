@@ -1,5 +1,12 @@
 # 版本变更 / Changelog
 
+## 本地测试 / Local test — 2026-11-21（Pico U 盘首次连接）
+
+- 修复 Pico 在数据线已连接时首次进入「文件管理 → U 盘模式」电脑不认盘：进入时强制一次真实 USB 断开/重连，并在共享 PHY 切换前后关闭/恢复 Serial/JTAG 的 pad 与 D+ 上拉，不再依赖上一次退出残留的 SDIS 状态。
+- 首次枚举宽限由 8 秒延长到 30 秒，并在未枚举 2 秒时自动重连一次，避免慢主机被误判为“主机已离开”而提前退出。
+- Fix Pico's first «Files → USB drive» entry when the cable is already attached: force a real USB detach/attach, and gate/restore the Serial/JTAG pad and D+ pull-up around the shared-PHY switch instead of relying on leftover SDIS state.
+- Allow 30 s for the first enumeration and retry the attach once after 2 s, so a slow host is not mistaken for a disconnected one.
+
 ## 本地测试 / Local test — 2026-11-19（Pico 保轨）
 
 - Pico 高压轨空闲保留时间由 8 秒延长到 30 秒，减少反复放电/上电次数，改善阳光下淡墨与连续翻页的一致性；像素驱动仍在每轮输出后立即释放。

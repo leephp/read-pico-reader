@@ -90,6 +90,14 @@ static esp_err_t release_serial_phy(void) { return metalio_usb_route_serial(fals
 bool usb_storage_active(void) { return s_active; }
 bool usb_storage_connected(void) { return s_active && !s_cleanup_pending && tud_mounted(); }
 
+esp_err_t usb_storage_reattach(void) {
+    if (!s_active || !s_usb_ready || s_cleanup_pending) return ESP_ERR_INVALID_STATE;
+    (void)tud_disconnect();
+    vTaskDelay(pdMS_TO_TICKS(50));
+    (void)tud_connect();
+    return ESP_OK;
+}
+
 void usb_storage_phy_init(void) {
     metalio_usb_serial_startup();
 }

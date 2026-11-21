@@ -37,6 +37,7 @@ set(main_requires
     heap
     nvs_flash
     esp_hw_support
+    esp_hal_usb
     esp_rom
     esp_driver_gpio
     esp_driver_usb_serial_jtag
@@ -244,6 +245,7 @@ set(main_requires
     heap
     nvs_flash
     esp_hw_support
+    esp_hal_usb
     esp_rom
     esp_driver_gpio
     esp_driver_usb_serial_jtag

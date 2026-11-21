@@ -17,6 +17,7 @@
 #include "driver/sdmmc_host.h"
 #include "esp_log.h"
 #include "esp_private/usb_phy.h"
+#include "hal/usb_serial_jtag_ll.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "read_pico_sd.h"
@@ -43,14 +44,42 @@ static void restore_serial_phy(void) {
         .target = USB_PHY_TARGET_INT,
     };
     esp_err_t err = usb_new_phy(&config, &s_serial_phy);
-    if (err != ESP_OK) ESP_LOGE(TAG, "USB Serial/JTAG restore failed: %s", esp_err_to_name(err));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "USB Serial/JTAG restore failed: %s", esp_err_to_name(err));
+        return;
+    }
+    // usb_new_phy() 只切 mux 和 pad；S3 上不会设置 D+ 上拉。
+    // 退出 U 盘模式后必须显式恢复，串口才会重新枚举。
+    // usb_new_phy() only switches the mux and pad; it does not set the D+ pull-up on S3.
+    const usb_serial_jtag_pull_override_vals_t pullup = { .dp_pu = true };
+    usb_serial_jtag_ll_phy_enable_pull_override(&pullup);
+    usb_serial_jtag_ll_phy_enable_pad(true);
 }
 
 static void release_serial_phy(void) {
+    // 切到 OTG 前先撤掉 USJ 的 D+ 上拉并关 pad，让主机看到真实断开。
+    // usb_del_phy() 在 S3 上只清 USB_WRAP 的 pull override，不会动 USJ conf0。
+    // Drop the USJ D+ pull-up and pad before the mux moves to OTG so the host sees a real detach.
+    const usb_serial_jtag_pull_override_vals_t floating = {0};
+    usb_serial_jtag_ll_phy_enable_pull_override(&floating);
+    usb_serial_jtag_ll_phy_enable_pad(false);
+    vTaskDelay(pdMS_TO_TICKS(20));
     if (!s_serial_phy) return;
     esp_err_t err = usb_del_phy(s_serial_phy);
     if (err != ESP_OK) ESP_LOGW(TAG, "USB Serial/JTAG release failed: %s", esp_err_to_name(err));
     s_serial_phy = NULL;
+}
+
+static void force_reattach(void) {
+    (void)tud_disconnect();
+    vTaskDelay(pdMS_TO_TICKS(50));
+    (void)tud_connect();
+}
+
+esp_err_t usb_storage_reattach(void) {
+    if (!s_active || !s_usb_ready || s_cleanup_pending) return ESP_ERR_INVALID_STATE;
+    force_reattach();
+    return ESP_OK;
 }
 
 bool usb_storage_active(void) { return s_active; }
@@ -120,6 +149,11 @@ esp_err_t usb_storage_start(void) {
     if (err != ESP_OK) goto fail;
     s_usb_ready = true;
     s_active = true;
+    // 主机可能仍绑定切换前的 Serial/JTAG CDC。强制一次真实断开/重连，
+    // 不依赖上一次退出残留的 DCTL.SDIS 状态。
+    // The host can still be bound to the pre-switch Serial/JTAG CDC; force a visible
+    // detach/attach instead of relying on leftover DCTL.SDIS state.
+    force_reattach();
     ESP_LOGI(TAG, "TF card exposed as USB MSC");
     return ESP_OK;
 fail:

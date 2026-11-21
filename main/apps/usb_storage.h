@@ -13,6 +13,10 @@ esp_err_t usb_storage_stop(void);
 bool usb_storage_active(void);
 bool usb_storage_connected(void);
 
+/// 强制主机看到一次 USB 断开/重连，用于首次进入时主机仍绑定串口设备。
+/// Force a host-visible USB detach/attach when the host may still be bound to serial.
+esp_err_t usb_storage_reattach(void);
+
 /// 开机回收串口/JTAG 所需的共享内部 PHY。
 /// / Reclaim the shared internal PHY for Serial/JTAG at boot.
 void usb_storage_phy_init(void);
