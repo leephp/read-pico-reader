@@ -48,9 +48,15 @@ typedef struct {int type,x0,y0,x,y;} ui_gesture_event_t;
 #define EPD_DRAW_ALIGN_CENTER 1
 #define SETTINGS_SCROLL_MAX 1000
 static int s_page=SETTINGS_SHELF_STYLE,s_style_scroll,s_main_scroll,s_ble_scroll,viewport=1088,style=2;
-static bool s_scroll_drag_consumed,s_scroll_present_pending,s_main_wifi_saved;
-static char s_main_wifi[33];
+static bool s_scroll_drag_consumed,s_scroll_present_pending;
+
 static unsigned glass,acrylic,headers,footers,cards,titles;
+static void *ctx;
+static struct {bool tracking;int origin_offset,origin_y;} s_list_drag;
+static bool settings_drag_gesture(void *c,const ui_gesture_event_t *e,int *o,int l,app_redraw_t *r){(void)c;(void)e;(void)o;(void)l;(void)r;return false;}
+static char s_notice[96];
+static app_redraw_t shelf_style_finish(void *c){(void)c;s_page=SETTINGS_MAIN;return APP_REDRAW_PAGE;}
+
 static int settings_viewport_end(void){return viewport;}
 static int settings_content_end(void){return viewport;}
 static int app_settings_shelf_style(void){return style;}
@@ -102,7 +108,7 @@ unit += r'''
 int main(void){
  const int expected[]={1,2,6,5};uint8_t fb=0;
  for(unsigned choice=0;choice<4;++choice){
-  style=expected[choice];int rows=style==5?4:9;assert(shelf_rows()==rows);
+  style=expected[choice];int rows=style==5?8:9;assert(shelf_rows()==rows);
   for(int i=0;i<rows;++i){EpdRect hit=row_rect(i),cover=shelf_cover_image(i);
    assert(cover.x>=36&&cover.x+cover.width<=648&&cover.y>=184&&cover.y+cover.height<=972);
    assert(cover.x>=hit.x&&cover.x+cover.width<=hit.x+hit.width&&cover.y>=hit.y&&cover.y+cover.height<=hit.y+hit.height);

@@ -170,11 +170,7 @@ void app_home_release_clock_cache(void) {
 static void clock_base_prepare(void){
     app_home_component_t component=s_view==HOME_COMPONENT?s_component_browse:app_settings_home_component();
     bool eligible=component!=APP_HOME_FOLDER;
-#if KIIKO_BOARD_METALIO47
-    const size_t bytes=UI_HOME_CLOCK_BASE_CACHE_BYTES;
-#else
     const size_t bytes=s_view==HOME_COMPONENT?UI_HOME_CLOCK_BASE_CACHE_BYTES:UI_HOME_CLOCK_LIVE_CACHE_BYTES;
-#endif
     if(s_clock_cache_bytes>=bytes||s_clock_base_attempted||!eligible)return;
     s_clock_base_attempted=true;
     if(heap_caps_get_free_size(MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)<bytes+2u*1024u*1024u)return;
@@ -473,11 +469,7 @@ static void component_prepare_neighbor(app_ctx_t *ctx) {
     s_component_warm_after_ms=ctx->now_ms+600;
     EpdRect bounds=component_clock_bounds();bool binary=app_settings_main_fast_refresh();
     unsigned current=component_index(s_component_browse);
-#if KIIKO_BOARD_METALIO47
-    const unsigned limit=HOME_COMPONENT_OPTIONS;
-#else
     const unsigned limit=3;
-#endif
     for(unsigned step=1;step<limit;++step) {
         unsigned offset=(step+1)/2;
         unsigned index=(current+HOME_COMPONENT_OPTIONS+(step&1?offset:HOME_COMPONENT_OPTIONS-offset))%HOME_COMPONENT_OPTIONS;
@@ -485,18 +477,8 @@ static void component_prepare_neighbor(app_ctx_t *ctx) {
         if(component==APP_HOME_FOLDER)continue;
         ui_home_clock_style_t style=clock_style(component);
         if(ui_home_clock_preview_cached(bounds,binary,style))continue;
-#if KIIKO_BOARD_METALIO47
-        const size_t bytes=(size_t)epd_width()*epd_height()/2;
-        if(heap_caps_get_free_size(MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)<bytes+2u*1024u*1024u)return;
-        uint8_t *scratch=heap_caps_malloc(bytes,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
-        if(!scratch)return;
-        ui_fill_rect_fast(bounds,0xff,scratch);
-        ui_home_clock_preview_draw(scratch,bounds,binary,style);
-        free(scratch);return;
-#else
         if(heap_caps_get_free_size(MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)<2u*1024u*1024u)return;
         (void)ui_home_clock_preview_prepare(bounds,binary,style);return;
-#endif
     }
 }
 static void refresh_days(void) {

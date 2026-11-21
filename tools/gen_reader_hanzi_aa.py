@@ -9,7 +9,7 @@ ROOT=Path(__file__).resolve().parents[1]
 BASE=24;BLOCK=32;RECORD=293
 
 def main():
- p=argparse.ArgumentParser();p.add_argument('--src',type=Path,required=True);p.add_argument('--out',type=Path,default=ROOT/'boards/pico/src/main/assets/ui-hanzi.bin');p.add_argument('--mono-out',type=Path,help='Optional compact PIF1 reference output with identical UI pixels');p.add_argument('--extra',type=Path,default=ROOT/'main/font/reader_extra_hanzi.txt');a=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('--src',type=Path,required=True);p.add_argument('--out',type=Path,default=ROOT/'main/assets/ui-hanzi.bin');p.add_argument('--mono-out',type=Path,help='Optional compact PIF1 reference output with identical UI pixels');p.add_argument('--extra',type=Path,default=ROOT/'main/font/reader_extra_hanzi.txt');a=p.parse_args()
  raw=a.src.read_bytes();n=struct.unpack_from('>H',raw,4)[0]
  tables={raw[12+i*16:16+i*16]:struct.unpack_from('>II',raw,20+i*16) for i in range(n)}
  with tempfile.TemporaryDirectory(prefix='reader-hanzi-generator-') as d:

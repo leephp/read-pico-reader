@@ -8,7 +8,7 @@ import subprocess,tempfile
 from home_cover_cache_host_test import function
 ROOT=Path(__file__).resolve().parents[1]
 PMU=ROOT/'components/read_pico_pmu/read_pico_pmu.c'
-BOOT=ROOT/'boards/pico/src/main/app_main.c'
+BOOT=ROOT/'main/app_main.c'
 unit=r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -86,7 +86,7 @@ if 'bool read_pico_pmu_take_boot_power_key(' in PMU.read_text():
 if 'void read_pico_pmu_rearm_after_boot_key(' in PMU.read_text():
  unit+=function('read_pico_pmu_rearm_after_boot_key',PMU)+'\n'
 unit+=function('read_pico_pmu_take_key_action',PMU)+'\n'
-unit+=function('app_lock_ignore_for',ROOT/'boards/pico/src/main/app/app_loop.c')+'\n'
+unit+=function('app_lock_ignore_for',ROOT/'main/app/app_loop.c')+'\n'
 unit+=function('read_pico_pmu_deinit',PMU)+'\n'+function('read_pico_pmu_init',PMU)+'\n'
 unit+=r'''
 static bool lock_pin_enabled(void){return pin;}

@@ -51,7 +51,7 @@ static bool box_probe;
 static bool rule_probe;static int rule_style_label_bottom,rule_offset_label_bottom,rule_hint_bottom;
 static bool reading_probe;static unsigned reading_labels,reading_switches;
 static bool image_probe;static unsigned image_text_count,image_switches;
-static int s_reader_slider=-1,s_reader_preview_px=32,s_px=32;
+static int s_reader_slider=-1,s_reader_preview_px=32,s_px=32,s_pending_px;
 static unsigned app_settings_system_font_size(void){return scale;}
 static int ui_text_effective_px(int px){return scaling?(px+2)*(int)scale/100:px+2;}
 static bool ttf_font_is_builtin(void){return face==0;}

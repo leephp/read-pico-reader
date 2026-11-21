@@ -151,12 +151,12 @@ int main(void) {
                 if (to == from && a != 0) ++equal_gray_refreshes;
             }
     assert(equal_gray_refreshes > 0);
-    for (int f = drive; f < drive + 12; ++f)
+    for (int f = vendor->phases; f < vendor->phases + 12; ++f)
         for (int from = 0; from < 16; ++from)
             for (int to = 0; to < 16; ++to)
                 assert(e0470_phase_action(st, f, to, from) ==
                        (to == 15 ? 2 : 0));
-    for (int f = drive + 12; f < drive + 16; ++f)
+    for (int f = vendor->phases + 12; f < vendor->phases + 16; ++f)
         for (int from = 0; from < 16; ++from)
             for (int to = 0; to < 16; ++to)
                 assert(e0470_phase_action(st, f, to, from) ==
@@ -164,11 +164,11 @@ int main(void) {
     for (int i = 0; i < 3; ++i)
         for (int from = 0; from < 16; ++from)
             for (int to = 0; to < 16; ++to) {
-                assert(e0470_phase_action(st, drive + 16 + i, to, from) ==
+                assert(e0470_phase_action(st, drive + i, to, from) ==
                        e0470_phase_action(vendor, drive + i, to, from));
-                assert(e0470_phase_action(st, drive + 16 + i, to, from) == 0);
+                assert(e0470_phase_action(st, drive + i, to, from) == 0);
             }
-    puts("PASS: soft ordinary turn keeps vendor sequences and equal-gray refresh, drops only black-on-black erase phases, inserts twelve whole-white phases and four black re-drive phases before the vendor settle holds");
+    puts("PASS: soft ordinary turn keeps vendor sequences and equal-gray refresh, drops only black-on-black erase phases, inserts twelve whole-white phases and four black re-drive phases after the vendor settle holds");
     const EpdWaveform* water_wave=display_reader_water_waveform();
     const EpdWaveformPhases* water=e0470_waveform_phases(water_wave,MODE_GL16);
     assert(water_wave==display_reader_water_waveform() && water && water->phases==E0470_GL16_FRAMES+4);

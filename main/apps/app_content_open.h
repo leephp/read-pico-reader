@@ -31,23 +31,7 @@ void app_book_ticket_sample(int64_t now_ms, bool exposed);
 void app_book_pause_auto(void);
 /// 全屏触摸图不允许时钟或电量覆盖。/ Full-screen touch diagrams reject clock/power overlays.
 bool app_book_status_bar_visible(void);
-#if KIIKO_BOARD_METALIO47
-#else
 /// Pico阅读会话，包括正文上的工具面板；只读且不访问文件。/ Pico reader session, including its panels; pure, without file I/O.
-#endif
-#if KIIKO_BOARD_METALIO47
-#include "app/app.h"
-/// 共用看图入口，path可空以显示列表；透明书封只收PNG。/ Shared viewer entry; an empty path opens its list, while transparent covers accept PNG only.
-bool app_image_request_lock_picker(const char *path, bool transparent);
-/// 从专用看图列表返回锁屏样式，跳转主页时不保留此请求。/ Return from the scoped viewer list to lock styles; home navigation does not queue this.
-void app_device_settings_resume_lock_style(void);
-/// 阅读音量键固定翻页；非阅读返回false，由原页面处理。/ Fixed volume turns in the reader; false delegates non-reader views to their existing keys.
-bool app_book_volume_key(app_ctx_t *ctx, int direction, app_redraw_t *redraw);
-/// 仅当前正文允许AI书签，复用原书签保存/提示。/ AI bookmark only on the visible reader body, using existing persistence/notices.
-bool app_book_ai_bookmark(void);
-/// Return to the current shelf when the resumed file failed on an otherwise mounted card.
-void app_book_wake_file_failed(app_ctx_t *ctx);
-#endif
 /// 模式/对比度变化时释放旧格式封面；绘制前由主循环一次调用。/ Drop obsolete cover formats once on mode/contrast changes, before drawing.
 void app_book_cover_mode_changed(void);
 void app_home_cover_mode_changed(void);

@@ -54,7 +54,7 @@ a=actual.index('    case RC_AUTOTURN:');b=actual.index('    case RC_EFFECT:',a)
 unit+='static app_redraw_t actual_auto_switch(app_ctx_t*ctx){switch(RC_AUTOTURN){\n'+actual[a:b]+'default:return APP_REDRAW_NONE;}}\n'
 unit+=r'''
 int main(void){
- config=reader_controls_defaults(false);config.seconds_le[0]=5;reader_controls_seal(&config);
+ config=reader_controls_defaults();config.seconds_le[0]=5;reader_controls_seal(&config);
  app_ctx_t ctx={.now_ms=1000};assert(actual_auto_switch(&ctx)==APP_REDRAW_PAGE&&s_rc_auto.running&&s_rc_auto.due_ms==6000);
  ctx.now_ms=5999;assert(rc_tick(&ctx)==APP_REDRAW_NONE&&turns==0);
  ctx.now_ms=6000;assert(rc_tick(&ctx)==APP_REDRAW_AREA&&turns==1&&s_page==1&&ctx.user_activity);

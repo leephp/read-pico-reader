@@ -126,7 +126,7 @@ int main(void){
 '''
 with tempfile.TemporaryDirectory() as folder:
     path=Path(folder)/'test.c';path.write_text(unit);exe=path.with_suffix('')
-    subprocess.run(['cc','-std=gnu11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+str(root/'main'),str(path),'-o',str(exe),'-DKIIKO_BOARD_METALIO47='+str(int(json.loads((root/'.kiiko-source-view.json').read_text())['board']=='metalio47'))],check=True)
+    subprocess.run(['cc','-std=gnu11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+str(root/'main'),str(path),'-o',str(exe),'-DKIIKO_BOARD_METALIO47='+'0'],check=True)
     subprocess.run([str(exe)],check=True)
 
 file_source=files.read_text()

@@ -3,10 +3,9 @@
 """中文：从唯一源码生成隔离的设备构建/测试视图，不修改维护源码。/ English: Generate isolated device build/test views from the one maintained source tree."""
 from pathlib import Path
 import json
-import re
 
-BOARDS = ('pico', 'metalio47')
-BOARD_ALIASES = {'metalio_s31': 'metalio47'}
+BOARDS = ('pico',)
+BOARD_ALIASES = {}
 
 def canonical_board(board):
     return BOARD_ALIASES.get(board, board)
@@ -17,44 +16,14 @@ def select_source(text, board):
     board = canonical_board(board)
     if board not in BOARDS:
         raise ValueError('Unknown board: ' + board)
-    # 只解释本工程的设备分支；保留SDK、平台和功能预处理指令给原编译器。
-    # Interpret only this project's board branches; retain SDK/platform/feature preprocessing for the compiler.
-    masked = re.sub(r'/\*[\s\S]*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'',
-                    lambda match: ''.join('\n' if char == '\n' else ' ' for char in match[0]), text)
-    stack, result = [], []
-    for line, scan in zip(text.splitlines(True), masked.splitlines(True)):
-        directive = re.match(r'\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)', scan)
-        active = lambda: all(value for kind, value in stack if kind == 'board')
-        if directive:
-            op, condition = directive.groups()
-            if op == 'if' and condition.strip() == 'KIIKO_BOARD_METALIO47':
-                stack.append(('board', board == 'metalio47'))
-                continue
-            if op in ('if', 'ifdef', 'ifndef'):
-                stack.append(('other', True))
-            elif op == 'else' and stack and stack[-1][0] == 'board':
-                stack[-1] = ('board', not stack[-1][1])
-                continue
-            elif op == 'elif' and stack and stack[-1][0] == 'board':
-                raise ValueError('Unexpected board elif')
-            elif op == 'endif':
-                if not stack:
-                    raise ValueError('Unbalanced preprocessor condition')
-                kind, _ = stack.pop()
-                if kind == 'board':
-                    continue
-        if active():
-            result.append(line)
-    if stack:
-        raise ValueError('Unbalanced preprocessor condition at EOF')
-    return ''.join(result)
+    return text
 
 
 def materialize(root, destination, board, tests=False):
     board = canonical_board(board)
     root, destination = Path(root).resolve(), Path(destination).resolve()
     if board not in BOARDS or root == destination or root.is_relative_to(destination):
-        raise ValueError('Use a separate destination for pico or metalio47')
+        raise ValueError('Use a separate destination for Pico')
     if destination.is_relative_to(root) and destination.relative_to(root).parts[0] in (
             'main', 'components', 'boards', 'cmake', 'tools', 'docs'):
         raise ValueError('Do not generate build views inside maintained source directories')
@@ -92,23 +61,8 @@ def materialize(root, destination, board, tests=False):
             # writers would race the copy.
             if relative.parts[:2] == ('docs', 'local'):
                 continue
-            # 生产构建由C编译器选择板型分支；旧主机测试的函数提取器需要预选后的视图。
-            # Production uses compiler board guards; legacy host extractors need preselected sources.
-            if tests and path.suffix in ('.c', '.h', '.cpp') and 'boards' not in relative.parts and path.name != 'stb_truetype.h':
-                write(relative, select_source(path.read_text(encoding='utf-8'), board).encode())
-            else:
-                write(relative, path.read_bytes())
-    overlay = root / 'boards' / board / 'src'
-    for path in overlay.rglob('*'):
-        if path.is_file():
-            write(path.relative_to(overlay), path.read_bytes())
-    write(Path('dependencies.lock'), (root / 'boards' / board / 'dependencies.lock').read_bytes())
-    if tests:
-        overlay = root / 'boards' / board / 'tests'
-        if overlay.exists():
-            for path in overlay.rglob('*'):
-                if path.is_file() and '__pycache__' not in path.parts:
-                    write(path.relative_to(overlay), path.read_bytes())
+            write(relative, path.read_bytes())
+    write(Path('dependencies.lock'), (root / 'boards/pico/dependencies.lock').read_bytes())
     for relative in set(previous.get('files', [])) - generated:
         stale = destination / relative
         if not stale.resolve().is_relative_to(destination):

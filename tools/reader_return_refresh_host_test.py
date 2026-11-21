@@ -87,7 +87,7 @@ int main(void){
 
 with tempfile.TemporaryDirectory() as temp:
     for s31 in (False, True):
-        sources = ROOT / ('main' if s31 else 'boards/pico/src/main')
+        sources = ROOT / ('main' if s31 else 'main')
         code = STUBS + '\n'.join((
             function('app_book_reading_active', sources / 'apps/app_book.c'),
             function('reader_return', sources / 'apps/app_book.c'),

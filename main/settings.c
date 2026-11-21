@@ -1469,7 +1469,7 @@ static esp_err_t backup_apply_stream(FILE *file) {
     if (ok && version >= 16) ok = fread(&home, 1, sizeof(home), file) == sizeof(home) && backup_home_valid(&home);
     if(ok && version>=18)ok=fread(&bookmark,1,sizeof(bookmark),file)==sizeof(bookmark)&&
         backup_background_valid(&bookmark)&&backup_path_valid(bookmark.path,sizeof(bookmark.path));
-    reader_controls_config_t controls=reader_controls_defaults(KIIKO_BOARD_METALIO47);
+    reader_controls_config_t controls=reader_controls_defaults();
     if(ok&&version>=24)ok=fread(&controls,1,sizeof(controls),file)==sizeof(controls)&&reader_controls_valid(&controls);
     reader_controls_normalize(&controls);
     settings_backup_shelf_t shelf=backup_shelf_make((profile.home_full_refresh&4)?1:0,true);

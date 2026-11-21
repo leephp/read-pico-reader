@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [main, codex/metalio-s31-test30]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -28,62 +28,15 @@ jobs:
           "$RUNNER_TEMP/kiiko-tls-python/bin/python" -m pip install cryptography==50.0.2
           "$RUNNER_TEMP/kiiko-tls-python/bin/python" tools/ota_tls_host_test.py
           python3 tools/pr59_driver_baseline_host_test.py
+          bash tools/run_cover_ram_cache_host_test.sh
           python3 tools/board_layer_host_test.py
           python3 tools/board_selection_host_test.py
           python3 tools/board_source_view.py --board pico --tests --output build/host/pico
-      - name: S31 pipeline, power and cache regressions
-        shell: bash
-        run: |
-          python3 tools/test_s31_pipeline_lut.py
-          python3 tools/test_s31_lcd_interrupt_guard.py
-          python3 tools/test_s31_dma_chain.py
-          python3 tools/test_s31_line_queue.py
-          python3 tools/test_s31_radio_margin.py
-          python3 tools/test_home_minute_present.py
-          bash tools/run_metalio_cover_cache_host_test.sh
-          python3 tools/board_source_view.py --board metalio47 --tests --output build/host/metalio47
-          python3 build/host/metalio47/tools/metalio_vcom_host_test.py
-          python3 build/host/metalio47/tools/test_glass_geometry.py
-          python3 build/host/metalio47/tools/metalio_clock_cache_host_test.py
-      - name: S31 sleep, power-off and unlock boundaries
-        shell: bash
-        working-directory: build/host/metalio47
-        run: |
-          python3 tools/metalio_sleep_host_test.py
-          python3 tools/metalio_light_transaction_host_test.py
-          python3 tools/metalio_deep_sleep_host_test.py
-          python3 tools/metalio_poweroff_host_test.py
-          python3 tools/metalio_boot_wake_host_test.py
-          python3 tools/metalio_lock_key_host_test.py
-          python3 tools/metalio_lock_resume_host_test.py
-          python3 tools/metalio_mount_resume_host_test.py
-          python3 tools/metalio_sd_access_host_test.py
-          python3 tools/metalio_font_recovery_host_test.py
-          python3 tools/metalio_edge_alignment_host_test.py
-          python3 tools/metalio_font_staging_host_test.py
-          python3 tools/metalio_font_parity_host_test.py
-          python3 tools/reader_font_switch_host_test.py
-          python3 tools/reader_font_recovery_host_test.py
-          python3 tools/test_usb_storage.py
-          python3 tools/cover_jobs_host_test.py
-          python3 tools/avatar_async_host_test.py
-          python3 tools/metalio_transfer_stream_host_test.py
-          python3 tools/metalio_keep_light_host_test.py
-          python3 tools/txt_utf16_host_test.py
-          python3 tools/metalio_wake_media_recovery_host_test.py
-          python3 tools/metalio_power_choice_host_test.py
-          python3 tools/metalio_charger_host_test.py
-          python3 tools/metalio_power_host_test.py
-          python3 tools/settings_layout_font_host_test.py
-          mkdir -p build/book-tests
-          cc -std=c11 -D_DEFAULT_SOURCE -DKIIKO_BOARD_METALIO47=1 -Wall -Wextra -Werror -fsanitize=address,undefined -Itools/settings_backup_stubs -Imain tools/boot_state_host_test.c -o build/book-tests/boot-state
-          build/book-tests/boot-state
       - name: Progress filesystem initialization and restore preflight
         shell: bash
         run: |
           python3 tools/progress_boot_storage_host_test.py
           python3 tools/settings_restore_storage_host_test.py
-          python3 build/host/pico/tools/settings_restore_storage_host_test.py
       - name: Water-turn, display recovery, navigation and waveform regressions
         shell: bash
         working-directory: build/host/pico
@@ -113,7 +66,6 @@ jobs:
           python3 tools/quick_layer_raster_host_test.py
           python3 tools/test_epd_difference_bounds.py --check-regression
           python3 tools/pico_reader_crop_host_test.py
-          python3 tools/test_s31_pie_dispatch.py
           python3 tools/test_lcd_frame_lifecycle.py
           sh tools/run_app_loop_host_tests.sh
           python3 tools/reader_spacing_host_test.py
@@ -128,8 +80,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        board: [pico, metalio47]
-    # v6.1 includes both Xtensa S3 and RISC-V S31; never share their build/config directories.
+        board: [pico]
+    # Pico uses the ESP-IDF v6.1 Xtensa ESP32-S3 toolchain.
     container: espressif/idf:v6.1
     steps:
       - uses: actions/checkout@v4
@@ -137,16 +89,10 @@ jobs:
         shell: bash
         run: |
           . "$IDF_PATH/export.sh"
-          board_release_flags=()
-          if [ "${{ matrix.board }}" = metalio47 ]; then
-            board_release_flags=(--s31-pie --s31-reader-panel37 --s31-shelf37 --s31-settings-short-motion)
-          fi
           python tools/build_firmware.py --board "${{ matrix.board }}" \
             --idf-${{ matrix.board }} "$IDF_PATH" --python "$(command -v python)" \
-            --output build/boards "${board_release_flags[@]}"
-          if [ "${{ matrix.board }}" = pico ]; then
-            python tools/lowzag_host_test.py --component build/boards/pico/source/managed_components/defensiblelogic__lowzag
-          fi
+            --output build/boards
+          python tools/lowzag_host_test.py --component build/boards/pico/source/managed_components/defensiblelogic__lowzag
       - name: Verify transparent-cover pixels and cache reads
         if: matrix.board == 'pico'
         shell: bash
@@ -157,17 +103,6 @@ jobs:
           KIIKO_TEST_BOARD="${{ matrix.board }}" \
           KIIKO_LIBPNG_PATH="$PWD/build/boards/${{ matrix.board }}/source/managed_components/espressif__libpng/libpng" \
             python3 build/bookmark-tests/${{ matrix.board }}/tools/book_lock_bookmark_host_test.py
-      - name: S31 progressive JPEG bounded-memory regression
-        if: matrix.board == 'metalio47'
-        shell: bash
-        run: |
-          . "$IDF_PATH/export.sh"
-          jpeg_source=build/boards/metalio47/source/managed_components/espressif__libjpeg-turbo/libjpeg-turbo
-          cmake -S "$jpeg_source" -B "$RUNNER_TEMP/s31-jpeg-host" \
-            -DCMAKE_C_COMPILER=/usr/bin/cc -DENABLE_SHARED=OFF -DWITH_TURBOJPEG=OFF \
-            -DWITH_SIMD=OFF -DWITH_TOOLS=OFF -DWITH_TESTS=OFF
-          cmake --build "$RUNNER_TEMP/s31-jpeg-host" --target jpeg-static -j2
-          python3 tools/metalio_jpeg_host_test.py --jpeg-source "$jpeg_source/src" --jpeg-build "$RUNNER_TEMP/s31-jpeg-host"
       - uses: actions/upload-artifact@v4
         with:
           name: firmware-${{ matrix.board }}
@@ -180,7 +115,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        board: [pico, metalio47]
+        board: [pico]
     steps:
       - uses: actions/checkout@v4
       - name: Select Clang for sanitizer host regressions
@@ -192,10 +127,6 @@ jobs:
       - name: Materialize and test reader/UI/settings for this board
         shell: bash
         run: |
-          if [ "${{ matrix.board }}" = metalio47 ]; then
-            python3 tools/metalio_reader_soft_turn_host_test.py
-            python3 tools/metalio_text_batch_host_test.py
-          fi
           python3 tools/board_source_view.py --board "${{ matrix.board }}" --tests --output build/host/${{ matrix.board }}
           cd build/host/${{ matrix.board }}
           mkdir -p build/book-tests/settings-card
@@ -203,30 +134,13 @@ jobs:
           build/book-tests/layout
           python3 tools/gen_english_hyphen.py --check
           python3 tools/english_hyphen_host_test.py
-          if [ "${{ matrix.board }}" = "metalio47" ]; then
-            python3 tools/metalio_du14_host_test.py
-            python3 tools/metalio_du14_white_host_test.py
-            python3 tools/reader_gl37_profiles_host_test.py
-            python3 tools/reader_dirty_padding_host_test.py
-            python3 tools/reader_single_full_host_test.py
-            python3 tools/s31_reader_ripple_crop_host_test.py
-            python3 tools/reader_panel_entry_host_test.py
-            python3 tools/reader_panel_host_test.py
-            python3 tools/metalio_text_ripple_routes_host_test.py
-            python3 tools/metalio_vcom_host_test.py
-            python3 tools/s31_flash_guard_host_test.py
-          fi
           python3 tools/title_font_host_test.py
           python3 tools/reader_hanzi_fallback_host_test.py
           python3 tools/ui_hanzi_host_test.py
           python3 tools/pico_builtin_font_host_test.py
           python3 tools/file_names_host_test.py
           python3 tools/txt_navigation_host_test.py
-          if [ "${{ matrix.board }}" = "metalio47" ]; then
-            python3 tools/txt_volume_host_test.py --s31
-          else
-            python3 tools/txt_volume_host_test.py
-          fi
+          python3 tools/txt_volume_host_test.py
           python3 tools/test_book_toc.py
           python3 tools/liquid_shelf_style_host_test.py
           python3 tools/shelf_guard_cache_host_test.py

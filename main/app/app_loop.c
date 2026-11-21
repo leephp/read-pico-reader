@@ -497,7 +497,7 @@ static void switch_to(
 ) {
     if (!next || (next==*current && (!next->persistent_navigation || main_page_ready(ctx,next)))) return;
     const bool reader_to_home = *current==&app_book && next==app_at(0) && app_book_reading_active();
-#if defined(KIIKO_LOCAL_LATENCY) || KIIKO_BOARD_METALIO47
+#if defined(KIIKO_LOCAL_LATENCY)
     const int64_t probe_start=esp_timer_get_time();
     const int probe_from=app_index_of(*current);
 #endif
@@ -506,16 +506,16 @@ static void switch_to(
     app_book_shelf_prefetch_cancel();
     display_main_transition_cancel();
     if ((*current)->on_exit != NULL) (*current)->on_exit(ctx);
-#if defined(KIIKO_LOCAL_LATENCY) || KIIKO_BOARD_METALIO47
+#if defined(KIIKO_LOCAL_LATENCY)
     const int64_t probe_exit=esp_timer_get_time();
 #endif
     *current = next;
     app_font_activate_system();
-#if defined(KIIKO_LOCAL_LATENCY) || KIIKO_BOARD_METALIO47
+#if defined(KIIKO_LOCAL_LATENCY)
     const int64_t probe_font=esp_timer_get_time();
 #endif
     if (next->on_enter != NULL) next->on_enter(ctx);
-#if defined(KIIKO_LOCAL_LATENCY) || KIIKO_BOARD_METALIO47
+#if defined(KIIKO_LOCAL_LATENCY)
     const int64_t probe_enter=esp_timer_get_time();
 #endif
     if (main_source && navigation_page_ready(ctx, next)) display_main_transition_arm(next, shelf_source, true);
@@ -527,7 +527,7 @@ static void switch_to(
         local_probe_contact_start_us=0;
     }
 #endif
-#if defined(KIIKO_LOCAL_LATENCY) || KIIKO_BOARD_METALIO47
+#if defined(KIIKO_LOCAL_LATENCY)
     ESP_LOGI("latency","SWITCH from=%d to=%d mode=%d exit_us=%lld font_us=%lld enter_us=%lld present_us=%lld total_us=%lld",probe_from,app_index_of(next),app_settings_main_refresh_mode(),
         (long long)(probe_exit-probe_start),(long long)(probe_font-probe_exit),(long long)(probe_enter-probe_font),
         (long long)(esp_timer_get_time()-probe_enter),(long long)(esp_timer_get_time()-probe_start));

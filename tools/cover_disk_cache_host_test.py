@@ -17,7 +17,7 @@ unit=r'''
 #include <strings.h>
 #include <errno.h>
 #include <sys/stat.h>
-#include "metalio_cover_cache.h"
+#include "cover_ram_cache.h"
 static bool ram_enabled=true;
 void *heap_caps_malloc(size_t n,unsigned caps){assert(caps==3);return ram_enabled?malloc(n):NULL;}
 void *heap_caps_calloc(size_t n,size_t z,unsigned caps){assert(caps==3);return ram_enabled?calloc(n,z):NULL;}
@@ -96,12 +96,12 @@ int main(int argc,char **argv){
  book_cover_fast_cache_write_checked(path,"name","author",key,stale,false,(int64_t)h.source.file_size+1,h.source.modified);
  assert(book_cover_fast_cache_read(path,"name","author",key,out,&edge)&&!memcmp(out,bits,4494));
  FILE *f=fopen(cache,"r+b");assert(f&&fseek(f,sizeof(h)+8,SEEK_SET)==0);int byte=fgetc(f);fseek(f,-1,SEEK_CUR);assert(fputc(byte^1,f)!=EOF);fclose(f);
- metalio_cover_cache_clear();assert(!book_cover_fast_cache_read(path,"name","author",key,out,&edge)&&!load_shelf_cover_fast(0,0)&&!live);
+ cover_ram_cache_clear();assert(!book_cover_fast_cache_read(path,"name","author",key,out,&edge)&&!load_shelf_cover_fast(0,0)&&!live);
  book_cover_fast_cache_write(path,"name","author",key,bits,true);assert(load_shelf_cover_fast(0,0));
  save_shelf_cover_fast(0,0);free(s_covers[0].fast_bits);s_covers[0].fast_bits=NULL;
- f=fopen(cache,"ab");assert(f&&fputc(1,f)!=EOF);fclose(f);metalio_cover_cache_clear();assert(!book_cover_fast_cache_read(path,"name","author",key,out,&edge)&&!load_shelf_cover_fast(0,0)&&!live);
+ f=fopen(cache,"ab");assert(f&&fputc(1,f)!=EOF);fclose(f);cover_ram_cache_clear();assert(!book_cover_fast_cache_read(path,"name","author",key,out,&edge)&&!load_shelf_cover_fast(0,0)&&!live);
  book_cover_fast_cache_write(path,"name","author",key,bits,true);
- f=fopen(path,"ab");assert(f&&fputc(2,f)!=EOF);fclose(f);metalio_cover_cache_clear();assert(!book_cover_fast_cache_read(path,"name","author",key,out,&edge)&&!load_shelf_cover_fast(0,0)&&!live);
+ f=fopen(path,"ab");assert(f&&fputc(2,f)!=EOF);fclose(f);cover_ram_cache_clear();assert(!book_cover_fast_cache_read(path,"name","author",key,out,&edge)&&!load_shelf_cover_fast(0,0)&&!live);
  book_cover_fast_cache_write(path,"name","author",key,bits,false);assert(load_shelf_cover_fast(0,0)&&!s_covers[0].fast_white_edge);free(s_covers[0].fast_bits);s_covers[0].fast_bits=NULL;
  oom=true;assert(!load_shelf_cover_fast(0,0)&&!live);oom=false;
  psram=512*1024;assert(!load_shelf_cover_fast(0,0)&&!live);psram=4*1024*1024;
@@ -119,13 +119,13 @@ int main(int argc,char **argv){
  home.height=251;assert(!book_cover_fast_cache_read(path,"name","author",home,home_out,&edge));
  key.width=200;book_cover_fast_cache_write(path,"name","author",key,bits,true);assert(!book_cover_fast_cache_read(path,"name","author",key,out,&edge));
  write_fail=true;key=(book_fast_cover_key_t){164,214,21,100,2};book_cover_fast_cache_write(path,"name","author",key,bits,true);write_fail=false;
- metalio_cover_cache_clear();ram_enabled=true;key=(book_fast_cover_key_t){164,214,21,100,2};
+ cover_ram_cache_clear();ram_enabled=true;key=(book_fast_cover_key_t){164,214,21,100,2};
  book_cover_fast_cache_write(path,"name","author",key,bits,true);
  assert(book_cover_fast_cache_read(path,"name","author",key,out,&edge));
- assert(metalio_cover_cache_stats().entries==1&&metalio_cover_cache_stats().bytes==4494);
+ assert(cover_ram_cache_stats().entries==1&&cover_ram_cache_stats().bytes==4494);
  assert(fast_cover_key(path,"name","author",key,cache,&h));remove(cache);
  deny_storage=true;
- metalio_cover_meta_t meta;
+ cover_ram_meta_t meta;
  assert(book_cover_shelf_ram_read(path,"name","author",h.source.file_size,h.source.modified,false,true,key,NULL,0,&meta));
  assert(meta.width==164&&meta.height==214&&meta.white_edge);
  assert(book_cover_shelf_ram_read(path,"name","author",h.source.file_size,h.source.modified,false,true,key,out,sizeof(out),&meta));
@@ -149,9 +149,9 @@ int main(int argc,char **argv){
  assert(book_cover_shelf_ram_read(txt,"title","",42,123,true,false,small,out,sizeof(out),&meta));
  cover_font=0;
  deny_storage=false;
- uint64_t hits=metalio_cover_cache_stats().hits;
+ uint64_t hits=cover_ram_cache_stats().hits;
  assert(book_cover_fast_cache_read(path,"name","author",key,out,&edge)&&edge&&!memcmp(out,bits,4494));
- assert(metalio_cover_cache_stats().hits==hits+1);metalio_cover_cache_clear();
+ assert(cover_ram_cache_stats().hits==hits+1);cover_ram_cache_clear();
  assert(!book_cover_fast_cache_read(path,"name","author",key,out,&edge));
  ram_enabled=false;remove(path);assert(!load_shelf_cover_fast(0,0)&&!live);
  puts("PASS: real TF-to-RAM raster reuse (80 warm copies, no gray/JPEG workspace); grid/list exact pixels and one 4494B resident representation; source/contrast/phase/dimension invalidation; CRC, trailing bytes, reserve/OOM, blocked book, mode isolation, write failure and missing source");
@@ -159,5 +159,5 @@ int main(int argc,char **argv){
 '''
 with tempfile.TemporaryDirectory(dir=ROOT/'build') as directory:
  d=Path(directory);(d/'books').mkdir();(d/'books/a.epub').write_bytes(b'book');(d/'test.c').write_text(unit)
- subprocess.run(['cc','-std=gnu11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-pthread','-I'+str(ROOT/'tools/metalio_cache_host_stubs'),'-I'+str(ROOT/'main/book'),str(d/'test.c'),str(ROOT/'main/book/metalio_cover_cache.c'),'-o',str(d/'test')],check=True)
+ subprocess.run(['cc','-std=gnu11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-pthread','-I'+str(ROOT/'tools/cache_host_stubs'),'-I'+str(ROOT/'main/book'),str(d/'test.c'),str(ROOT/'main/book/cover_ram_cache.c'),'-o',str(d/'test')],check=True)
  subprocess.run([str(d/'test'),str(d)],check=True)

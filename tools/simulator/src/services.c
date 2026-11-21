@@ -143,13 +143,13 @@ void read_pico_transfer_stop(void){}
 bool read_pico_transfer_try_stop_if_idle(void){return true;}
 
 void continuous_du_reset(void){}
-void metalio_cover_cache_clear(void){}
-void metalio_cover_cache_trim(size_t budget){(void)budget;}
+void cover_ram_cache_clear(void){}
+void cover_ram_cache_trim(size_t budget){(void)budget;}
 
 /* 缩放/图层封面走宿主 ImageIO 的整图路径；这些流式接口在模拟器里一律未命中。 */
 /* Scaled/layered covers use whole-image ImageIO on the host; the streaming hooks always miss. */
 int book_cover_load_sized_io(const char*path,const char*title,const char*author,uint8_t*out,unsigned width,unsigned height,bool*auto_cache){(void)path;(void)title;(void)author;(void)out;(void)width;(void)height;if(auto_cache)*auto_cache=false;return -1;}
-bool book_cover_shelf_ram_read(const char*path,const char*title,const char*author,uint64_t size,int64_t modified,bool list,bool fast,book_fast_cover_key_t raster,void*out,size_t capacity,metalio_cover_meta_t*meta){(void)path;(void)title;(void)author;(void)size;(void)modified;(void)list;(void)fast;(void)raster;(void)out;(void)capacity;if(meta)memset(meta,0,sizeof(*meta));return false;}
+bool book_cover_shelf_ram_read(const char*path,const char*title,const char*author,uint64_t size,int64_t modified,bool list,bool fast,book_fast_cover_key_t raster,void*out,size_t capacity,cover_ram_meta_t*meta){(void)path;(void)title;(void)author;(void)size;(void)modified;(void)list;(void)fast;(void)raster;(void)out;(void)capacity;if(meta)memset(meta,0,sizeof(*meta));return false;}
 void book_cover_shelf_ram_store(const char*path,const char*title,const char*author,uint64_t size,int64_t modified,uint64_t font_key,bool list,bool fast,book_fast_cover_key_t raster,const uint8_t*pixels,bool white_edge){(void)path;(void)title;(void)author;(void)size;(void)modified;(void)font_key;(void)list;(void)fast;(void)raster;(void)pixels;(void)white_edge;}
 bool book_cover_shelf_no_artwork(const char*path,const char*title,const char*author,uint64_t size,int64_t modified,bool remember){(void)path;(void)title;(void)author;(void)size;(void)modified;(void)remember;return false;}
 bool book_image_file_xth_grayscale(const char*path,unsigned width,unsigned height,uint8_t*out){(void)path;(void)width;(void)height;(void)out;return false;}

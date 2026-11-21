@@ -147,7 +147,7 @@ static int s_pressed_control;
 
 controls=(ROOT/'main/reader_controls.h').read_text()
 
-unit+="const reader_controls_config_t*app_settings_reader_controls(void){static reader_controls_config_t c;static bool loaded;if(!loaded){c=reader_controls_defaults(false);loaded=true;}return &c;}\n"
+unit+="const reader_controls_config_t*app_settings_reader_controls(void){static reader_controls_config_t c;static bool loaded;if(!loaded){c=reader_controls_defaults();loaded=true;}return &c;}\n"
 runtime=ROOT/'main/apps/book_reader_controls_runtime.inc'
 execute=function('rc_execute',runtime);begin=execute.index('    case RC_TOOLS:');end=execute.index('    case RC_TOOLS_TOGGLE:',begin)
 unit+='static void rc_invalidate(void){}\nstatic app_redraw_t rc_execute(app_ctx_t*ctx,unsigned action){switch(action){\n'+execute[begin:end]+'default:return APP_REDRAW_NONE;}}\n'

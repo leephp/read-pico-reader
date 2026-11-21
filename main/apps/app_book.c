@@ -180,7 +180,7 @@ extern const app_desc_t app_device_settings;
 #include "book_cover.h"
 #include "book_cover_auto.h"
 #include "book_cover_jobs.h"
-#include "metalio_cover_cache.h"
+#include "cover_ram_cache.h"
 #include "ota_online.h"
 #include "book_shelf_page_cache.h"
 #include "book_lock_collage.h"
@@ -903,7 +903,7 @@ static void prepare_fast_covers(void) {
 }
 void app_book_cover_mode_changed(void) {
     app_book_shelf_prefetch_cancel();
-    metalio_cover_cache_clear();
+    cover_ram_cache_clear();
     invalidate_covers();
 }
 static uint8_t* load_cover_gray(const char* source, const char* title, const char* author,
@@ -984,7 +984,7 @@ static bool shelf_cover_ram_hit(int index, int row, bool load) {
         rect.width, rect.height, SHELF_FAST_COVER_STRIDE, app_settings_system_contrast(),
         (rect.x & 3) | ((rect.y & 3) << 2),
     };
-    metalio_cover_meta_t meta;
+    cover_ram_meta_t meta;
     // 成品键与工作线程一致，首帧只拷贝内存，不重新访问原书或TF封面文件。
     // Match the worker's finished raster key; the first frame copies RAM without accessing the book or SD cache.
     if (!book_cover_shelf_ram_read(item->path, item->name, item->author, item->size, item->modified,
@@ -4592,9 +4592,6 @@ static bool present(app_ctx_t* ctx, app_redraw_t redraw) {
     bool rc_full=s_view==READING&&(s_reader_panel==READER_PANEL_TOUCH_SETTINGS||s_reader_panel==READER_PANEL_TOUCH_MORE);
     bool rc_transition=rc_full||s_rc_full_was_visible;s_rc_full_was_visible=rc_full;
     if((rc_transition||rc_custom_modal())&&(redraw==APP_REDRAW_PAGE||redraw==APP_REDRAW_FULL)){
-#if KIIKO_BOARD_METALIO47
-        s_reader_panel_frame.valid=false;
-#endif
         return false;
     }
 
@@ -5217,7 +5214,7 @@ static bool open_book_impl(app_ctx_t* ctx, const char* path) {
     // 书架封面和上一本书的预渲染缓冲可以重建；先释放，再解析 EPUB。
     // Cover and previous-page caches are rebuildable; release them before EPUB parsing.
     book_shelf_page_release();
-    metalio_cover_cache_trim(512u * 1024u);
+    cover_ram_cache_trim(512u * 1024u);
     invalidate_covers();
     app_home_release_clock_cache();
     lock_draw();
@@ -5996,7 +5993,7 @@ void app_book_shelf_prefetch_reset(void) {
     s_first_page_warm.next_ms = 0;
     s_shelf_cache_valid = false;
     s_shelf_index_preloaded = false;
-    metalio_cover_cache_clear();
+    cover_ram_cache_clear();
 }
 void app_book_shelf_prefetch_first(app_ctx_t *ctx) {
     if (ctx->now_ms < s_first_page_warm.next_ms || pico_boot_recovery() || app_touch_input_pending(ctx)) return;

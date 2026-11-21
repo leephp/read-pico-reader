@@ -7,7 +7,7 @@ import tempfile
 from home_cover_cache_host_test import function
 from test_epd_difference_bounds import PREFIX
 ROOT = Path(__file__).resolve().parents[1]
-render = ROOT/'boards/pico/src/components/epdiy/src/render.c'
+render = ROOT/'components/epdiy/src/render.c'
 highlevel = ROOT/'components/epdiy/src/highlevel.c'
 text = render.read_text()
 start = text.index('__attribute__((optimize("O3"))) static inline int _interlace_line_unaligned(')
@@ -121,5 +121,5 @@ with tempfile.TemporaryDirectory(prefix='pico-reader-crop-') as temp:
     c=folder/'test.c';c.write_text(unit);exe=folder/'test'
     subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-Wno-unknown-attributes',
                     '-Wno-pointer-to-int-cast','-fsanitize=address,undefined','-I'+temp,str(c),
-                    str(ROOT/'components/epdiy/src/riscv_pixels.c'),'-o',str(exe)],check=True)
+                    str(ROOT/'tools/epd_pixels_host.c'),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)

@@ -79,7 +79,7 @@ u+='static app_redraw_t panel(app_ctx_t*ctx,int x,int y,bool*handled){*handled=f
 u+=r'''
 static app_redraw_t tap(app_ctx_t*c,EpdRect r){bool handled=false;app_redraw_t out=panel(c,r.x+r.width/2,r.y+r.height/2,&handled);assert(handled);return out;}
 int main(void){
- config=reader_controls_defaults(false);app_ctx_t c={0};
+ config=reader_controls_defaults();app_ctx_t c={0};
  const int expected[]={READER_PANEL_FONT_SETTINGS,READER_PANEL_LAYOUT_SETTINGS,READER_PANEL_READING_DISPLAY,READER_PANEL_RULE_SETTINGS};
  for(int i=0;i<4;++i){s_rc_tab=0;s_reader_panel=READER_PANEL_REFRESH_SETTINGS;EpdRect a=rc_grid_rect(i);assert(a.y>=rc_root_top()+150&&a.y+a.height<rc_done_rect().y);assert(tap(&c,a)==APP_REDRAW_PAGE&&s_reader_panel==expected[i]);
   for(int j=0;j<i;++j){EpdRect b=rc_grid_rect(j);assert(a.x+a.width<=b.x||b.x+b.width<=a.x||a.y+a.height<=b.y||b.y+b.height<=a.y);}}

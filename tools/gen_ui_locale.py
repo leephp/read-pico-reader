@@ -12,12 +12,12 @@ def signature(text):
  return [(m[0],m[0].count('*')) for m in PRINTF.finditer(text) if m[0]!='%%']
 def paths():
  result=[]
- for directory in ['main/apps','main/ui','boards/pico/src/main/apps','boards/pico/src/main/ui']:
+ for directory in ['main/apps','main/ui','main/apps','main/ui']:
   for p in sorted((ROOT/directory).glob('*.c')):
    if p.name.startswith('app_') and p.name not in ['app_book.c','app_files.c','app_dashboard.c','app_device_settings.c','app_image.c','app_transfer.c','app_boot_recovery.c','app_onboarding.c']:continue
    if p.name in ['ui_ime.c','ui_hanzi.c']:continue
    result.append(p)
- for f in ['main/apps/book_manage_ui.h','main/lock_screen.c','boards/pico/src/main/lock_screen.c','main/ota_online.c','main/ota_update.c','main/ota_release.c','main/settings.c','boards/pico/src/main/settings.c','main/factory_reset.c','boards/metalio47/src/main/time_service.c','main/time_service.c','boards/pico/src/main/time_service.c','main/font/online_font.c','main/app/sd_recovery.c','main/app/app_loop.c','boards/pico/src/main/app/app_loop.c','components/read_pico_transfer/read_pico_transfer.c','boards/pico/src/components/read_pico_transfer/read_pico_transfer.c']:
+ for f in ['main/apps/book_manage_ui.h','main/lock_screen.c','main/lock_screen.c','main/ota_online.c','main/ota_update.c','main/ota_release.c','main/settings.c','main/settings.c','main/factory_reset.c','main/time_service.c','main/time_service.c','main/font/online_font.c','main/app/app_loop.c','main/app/app_loop.c','components/read_pico_transfer/read_pico_transfer.c','components/read_pico_transfer/read_pico_transfer.c']:
   p=ROOT/f
   if p.exists():result.append(p)
  return result
@@ -34,7 +34,7 @@ def literals(text):
 
 def collect():
  found={}
- for path in paths()+[ROOT/p for p in ['boards/metalio47/src/main/sleep.c','boards/pico/src/main/sleep.c','boards/metalio47/src/main/app_main.c','boards/pico/src/main/app_main.c'] if (ROOT/p).exists()]:
+ for path in paths()+[ROOT/p for p in ['main/sleep.c','main/app_main.c'] if (ROOT/p).exists()]:
   for text in literals(path.read_text()):
    if CJK.search(text):found.setdefault(text,[]).append(str(path.relative_to(ROOT)))
  return found

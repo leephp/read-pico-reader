@@ -2,7 +2,7 @@
 """Link the shipped Han decoder and bytes into native-font host regressions."""
 from pathlib import Path
 
-def font_hanzi_host_sources(root: Path, work: Path) -> list[str]:
+def font_hanzi_host_sources(root: Path, work: Path, width: int = 684, height: int = 1216) -> list[str]:
     name='ui-hanzi.bin'
     symbol='_binary_ui_hanzi_bin'
     data=(root/'main/assets'/name).read_bytes()
@@ -23,7 +23,9 @@ static inline tinfl_status tinfl_decompress(tinfl_decompressor *s,const unsigned
  (void)s;(void)base;(void)flags;uLongf z=*m;int result=uncompress(out,&z,in,*n);*m=z;return result==Z_OK?0:-1;
 }
 ''')
-    return [str(root/'main/font/ui_hanzi.c'),str(p),'-lz']
+    geometry=work/'font-display-host.c'
+    geometry.write_text(f'int epd_width(void){{return {width};}}\nint epd_height(void){{return {height};}}\nint epd_get_rotation(void){{return 0;}}\n')
+    return [str(root/'main/font/ui_hanzi.c'),str(p),str(geometry),'-lz']
 
 # Existing cmap-removal fixture shared by title and body fallback regressions.
 import struct

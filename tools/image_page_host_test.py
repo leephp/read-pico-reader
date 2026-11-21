@@ -196,8 +196,8 @@ int main(void){
  puts("PASS: real preview retains all16 gray levels;BW list scope;NULL/OOM/direct paths/siblings/media loss/pixel bounds");
 }
 """
-for board in ('pico','metalio47'):
-    overlay=root/'boards/pico/src/main/apps/app_image.c'
+for board in ('pico',):
+    overlay=root/'main/apps/app_image.c'
     actual=overlay.read_text() if board=='pico' and overlay.exists() else raw_source
     source=select_source(actual,board)
     source=source.replace('#include \"image_lock_menu.inc\"',(root/'main/apps/image_lock_menu.inc').read_text())

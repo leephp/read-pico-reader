@@ -52,11 +52,11 @@ static bool book_image_grayscale(const uint8_t *data,size_t bytes,bool png,unsig
 static bool book_auto_cover_render(const char *t,const char *a,unsigned w,unsigned h,uint8_t *out){(void)t;(void)a;assert(w==176&&h==240);memset(out,191,w*h);return true;}
 '''
 unit+=r'''
-typedef struct {uint64_t field[8];} metalio_cover_key_t;
-typedef struct {unsigned width,height;bool edge;} metalio_cover_meta_t;
-static __attribute__((unused)) metalio_cover_key_t ram_key(const cover_cache_header_t*k,unsigned v){(void)k;(void)v;return(metalio_cover_key_t){0};}
-static __attribute__((unused)) bool metalio_cover_cache_get(const metalio_cover_key_t*k,uint8_t*p,size_t n,metalio_cover_meta_t*m){(void)k;(void)p;(void)n;(void)m;return false;}
-static __attribute__((unused)) void metalio_cover_cache_put(const metalio_cover_key_t*k,const uint8_t*p,size_t n,metalio_cover_meta_t m){(void)k;(void)p;(void)n;(void)m;}
+typedef struct {uint64_t field[8];} cover_ram_key_t;
+typedef struct {unsigned width,height;bool edge;} cover_ram_meta_t;
+static __attribute__((unused)) cover_ram_key_t ram_key(const cover_cache_header_t*k,unsigned v){(void)k;(void)v;return(cover_ram_key_t){0};}
+static __attribute__((unused)) bool cover_ram_cache_get(const cover_ram_key_t*k,uint8_t*p,size_t n,cover_ram_meta_t*m){(void)k;(void)p;(void)n;(void)m;return false;}
+static __attribute__((unused)) void cover_ram_cache_put(const cover_ram_key_t*k,const uint8_t*p,size_t n,cover_ram_meta_t m){(void)k;(void)p;(void)n;(void)m;}
 '''
 for name in ('cover_hash','cover_cache_identity','cover_cache_key','book_cover_crop','fast_cover_checksum','list_cache_path','list_cache_commit','book_cover_load_list_gray_sized_impl','book_cover_load_list_gray_impl','book_cover_load_list_gray','book_cover_load_sized_io','book_cover_store_sized'):
     unit += function(name, source) + '\n'

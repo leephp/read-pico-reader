@@ -9,7 +9,7 @@ unit=r'''
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include "metalio_memory.h"
+#include "cache_memory.h"
 #define TTF_FONT_SLOTS 4
 #define TTF_CACHE_BUCKETS 256
 #define TTF_CACHE_LIMIT (1024u*1024u)
@@ -50,5 +50,5 @@ int main(void){
 '''
 with tempfile.TemporaryDirectory() as d:
  d=Path(d);(d/'test.c').write_text(unit)
- subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+str(r/'tools/metalio_cache_host_stubs'),'-I'+str(r/'main/book'),str(d/'test.c'),'-o',str(d/'test')],check=True)
+ subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+str(r/'tools/cache_host_stubs'),'-I'+str(r/'main/book'),str(d/'test.c'),'-o',str(d/'test')],check=True)
  subprocess.run([str(d/'test')],check=True)

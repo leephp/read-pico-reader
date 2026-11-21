@@ -167,7 +167,7 @@ def write_expected(path, text, codec, bom, titles, volumes):
 
 with tempfile.TemporaryDirectory(prefix='kiiko-volumes-') as tmp:
     t=Path(tmp);rows=[];originals=[]
-    (t/'esp_heap_caps.h').write_text('#include <stddef.h>\n#define MALLOC_CAP_SPIRAM 1\n#define MALLOC_CAP_8BIT 2\nvoid *heap_caps_malloc(size_t,int);\n')
+    (t/'esp_heap_caps.h').write_text('#include <stddef.h>\n#define MALLOC_CAP_SPIRAM 1\n#define MALLOC_CAP_8BIT 2\nvoid *heap_caps_malloc(size_t,int);\nvoid *heap_caps_realloc(void*,size_t,int);\n')
     for name,content in constant(ROOT/'tools/test_book_toc.py','STUBS').items():
         if name!='book_source.h':(t/name).write_text(content)
     AUTO=0xffffffff

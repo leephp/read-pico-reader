@@ -6,9 +6,6 @@
 #include "ui_locale_format.h"
 #endif
 #include "ui_avatar.h"
-#if KIIKO_BOARD_METALIO47
-#include "metalio_jpeg.h"
-#endif
 
 #include "ui_wallpaper.h"
 #include "book_store.h"
@@ -60,14 +57,8 @@ void ui_avatar_invalidate(void) {
     uint8_t *old[2];
     portENTER_CRITICAL(&s_avatar_lock);
     ++s_generation;s_path[0]=0;
-#if KIIKO_BOARD_METALIO47
-    bool cancel=s_running;
-#endif
     for(int i=0;i<2;++i){old[i]=s_pixels[i];s_pixels[i]=NULL;s_states[i]=UI_AVATAR_UNAVAILABLE;}
     portEXIT_CRITICAL(&s_avatar_lock);
-#if KIIKO_BOARD_METALIO47
-    if(cancel)metalio_jpeg_cancel();
-#endif
     for(int i=0;i<2;++i)free(old[i]);
 }
 void ui_avatar_request(const char *path,int side) {
@@ -101,9 +92,6 @@ ui_avatar_state_t ui_avatar_poll(const char *path,int side,uint8_t *pixels) {
     return state;
 }
 bool ui_avatar_quiesce(unsigned timeout_ms) {
-#if KIIKO_BOARD_METALIO47
-    metalio_jpeg_cancel();
-#endif
     portENTER_CRITICAL(&s_avatar_lock);
     s_paused=true;++s_generation;
     for(int i=0;i<2;++i)if(s_states[i]==UI_AVATAR_PENDING)s_states[i]=UI_AVATAR_UNAVAILABLE;

@@ -40,12 +40,13 @@ static int E0470_WAVEFORM,E0470_FULL_WAVEFORM,E0470_FOLLOW_WAVEFORM;
 #define display_main_normal_waveform() (&E0470_WAVEFORM)
 #endif
 typedef int EpdWaveform;
-static int reader_waveform,soft_turn_waveform;
+static int reader_waveform,soft_turn_waveform,white_waveform;
 static const int *display_main_gray_waveform(void){return &reader_waveform;}
 static const int *display_reader_soft_turn_waveform(void){return &soft_turn_waveform;}
 static bool s_reader_clock_pending,s_input_settle,s_shelf_feedback_pending,s_cover_batch_present_pending,s_shelf_page_pending;
 static bool s_reader_image_refresh_pending,s_reader_cleanup,s_reader_turn_pending,s_water_turn_pending,s_clear_confirm,s_reader_fullscreen,s_reader_footer_pending,s_reader_text_frame;
 static bool s_toolbar;
+static const EpdWaveform *display_reader_white_push_waveform(void){return &white_waveform;}
 static int s_view=READING,s_reader_panel,s_mode=MODE_GL16,s_presented_view=READING,s_water_turn_dir,s_page,s_du_count;
 static unsigned s_cover_dirty_mask,s_cover_present_mask;
 static unsigned s_turns;
@@ -70,6 +71,7 @@ static bool kick_prep(void){return false;}
 
 static const char *app_settings_book_background_path(void){return background?"wallpaper":"";}
 static void display_main_transition_cancel(void){}
+static bool px_settle_flush(app_ctx_t *ctx){(void)ctx;return false;}
 static void render(app_ctx_t *ctx,uint8_t *fb){(void)ctx;(void)fb;++rendered;}
 static void prepare_covers(app_ctx_t *ctx){(void)ctx;assert(s_view!=READING);}
 static void cancel_shelf_open(void) {}
@@ -113,7 +115,7 @@ static enum EpdDrawError update_display_reader_area(void *hl,const EpdWaveform *
  (void)hl;return push_area(full?14:13,wave,mode,area);
 }
 static bool present_reader_footer(app_ctx_t *ctx){
- (void)ctx;assert(calls==1);++footer_commits;s_reader_footer_pending=false;return true;
+ (void)ctx;assert(calls==1||calls==3);++footer_commits;s_reader_footer_pending=false;return true;
 }
 '''
 unit+='enum {READER_PANEL_TOUCH_SETTINGS=90,READER_PANEL_TOUCH_MORE=91};\nstatic bool s_rc_full_was_visible,s_rc_double_pending;\nstatic bool rc_custom_modal(void){return false;}\nstatic void rc_pause_auto(void){}\nstatic void rc_stop_auto(void){}\nstatic void rc_cancel_side(void){}\n'
@@ -184,14 +186,14 @@ int main(void){
  present(&ctx,APP_REDRAW_DONE);assert(!calls&&s_turns==7&&s_presented_view==SHELF);
  ctx.request_app=true;present(&ctx,APP_REDRAW_PAGE);
  assert(!calls&&s_turns==7&&s_presented_view==SHELF);ctx.request_app=false;
- // Pico普通翻页保留正文全像素GL16，信息栏在停下后独立局刷。
- // Pico ordinary turns use body-only full-pixel GL16 with independently deferred metadata.
+ // Pico普通文字/背景翻页整屏GL16，图文保留正文范围。
+ // Pico ordinary turns use whole-panel GL16 for text/backgrounds and body-only GL16 for images.
  for(int full=0;full<2;++full)for(int hide_status=0;hide_status<2;++hide_status)for(int content=0;content<3;++content){
   reset();s_reader_fullscreen=full;immersive=hide_status;s_reader_footer_pending=false;s_area=reader_area();
   images=content==1;s_reader_image_refresh_pending=images!=0;background=content==2;
   assert(present(&ctx,APP_REDRAW_AREA));
   assert(calls==1&&selected==14&&modes[0]==MODE_GL16&&waves[0]==&soft_turn_waveform&&s_reader_text_frame==(content==0));
-  same_area(areas[0],reader_area());
+  same_area(areas[0],content==1?reader_area():(EpdRect){0,0,684,1216});
   assert(footer_commits==1&&!s_reader_footer_pending&&!s_reader_cleanup);
  }
  for(int full=0;full<2;++full)for(int image=0;image<2;++image){
@@ -217,13 +219,13 @@ int main(void){
  reset();s_reader_turn_pending=false;s_mode=MODE_DU;s_reader_footer_pending=false;
  present(&ctx,APP_REDRAW_AREA);assert(calls==1&&modes[0]==MODE_DU&&waves[0]==&E0470_FOLLOW_WAVEFORM);
  reset();s_water_turn_pending=true;s_reader_footer_pending=false;
- present(&ctx,APP_REDRAW_AREA);assert(selected==18&&calls==1&&!s_water_turn_pending);
+ present(&ctx,APP_REDRAW_AREA);assert(selected==14&&calls==3&&!s_water_turn_pending);
  same_area(areas[0],reader_area());
  // Ripple and footer share one staggered output across fullscreen, status and direction choices.
  for(int full=0;full<2;++full)for(int hidden=0;hidden<2;++hidden)for(int dir=0;dir<4;++dir){
   reset();s_reader_fullscreen=full;immersive=hidden;s_area=reader_area();
   s_water_turn_pending=true;s_reader_footer_pending=false;s_water_turn_dir=dir;
-  assert(present(&ctx,APP_REDRAW_AREA)&&calls==1&&selected==18);
+  assert(present(&ctx,APP_REDRAW_AREA)&&calls==3&&selected==14);
   same_area(areas[0],reader_area());
   assert(footer_commits==1&&!s_water_turn_pending);
  }
@@ -242,8 +244,10 @@ int main(void){
  // Fast BW shares consecutive-text eligibility, fusing the footer; cleanup and images take priority.
  for(int full=0;full<2;++full)for(int hide_status=0;hide_status<2;++hide_status) {
   reset();tick=2;s_reader_fullscreen=full;immersive=hide_status;s_reader_footer_pending=false;s_area=reader_area();
-  assert(present(&ctx,APP_REDRAW_AREA)&&calls==1&&selected==20&&s_reader_text_frame);
+  assert(present(&ctx,APP_REDRAW_AREA)&&calls==3&&selected==14&&s_reader_text_frame);
   same_area(areas[0],reader_area());assert(footer_commits==1);
+  same_area(areas[1],reader_status_area());same_area(areas[2],progress_rect());
+  assert(waves[1]==&white_waveform&&waves[2]==&white_waveform);
  }
  for(int kind=0;kind<9;++kind) {
   reset();tick=2;
@@ -258,8 +262,8 @@ int main(void){
   present(&ctx,kind==8?APP_REDRAW_FULL:APP_REDRAW_AREA);assert(selected!=20);
  }
  reset();tick=2;fail=1;present(&ctx,APP_REDRAW_AREA);assert(selected==20&&!s_reader_text_frame);
- puts("PASS: FastBW crops to body and defers metadata, preserves full/periodic/entry/image/background/panel routes and rejects failed history");
- puts("PASS: reader entry cleans once with complete GC16 including images/backgrounds, retaining failure retry; ordinary Pico turns use body GL16 with deferred metadata; periodic GC16, ripple, local controls, clock and cancellation retain their paths");
+ puts("PASS: FastBW crops to body and separately re-whitens metadata, preserves full/periodic/entry/image/background/panel routes and rejects failed history");
+ puts("PASS: reader entry cleans once with complete GC16 including images/backgrounds, retaining failure retry; ordinary Pico text turns use whole-panel GL16, image turns retain body GL16; periodic GC16, ripple, local controls, clock and cancellation retain their paths");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='kiikoread-reader-release-') as folder:

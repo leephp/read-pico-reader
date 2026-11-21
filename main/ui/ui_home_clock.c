@@ -20,9 +20,7 @@ static uint8_t *s_base_cache;
 static size_t s_base_cache_bytes;
 static clock_base_key_t s_base_keys[UI_HOME_CLOCK_BASE_CACHE_SLOTS];
 static unsigned s_base_age;
-#if !KIIKO_BOARD_METALIO47
 static bool s_preview_preparing;
-#endif
 static uint8_t *base_slot(unsigned slot){
     return s_base_cache+(slot<2?slot*UI_HOME_CLOCK_BASE_SLOT_BYTES:
         UI_HOME_CLOCK_PREVIEW_OFFSET+(slot-2)*UI_HOME_CLOCK_BASE_SLOT_BYTES);
@@ -41,9 +39,7 @@ void ui_home_clock_bind_base_cache(uint8_t *memory,size_t bytes){
 }
 static bool base_candidate(const clock_canvas_t *c,EpdRect *physical){
     if(c->preview&&s_base_cache_bytes<UI_HOME_CLOCK_BASE_CACHE_BYTES)return false;
-#if !KIIKO_BOARD_METALIO47
     if(s_preview_preparing&&!c->preview)return false;
-#endif
     if(!s_base_cache||c->clip.width!=c->bounds.width||c->clip.height<c->bounds.height*9/10)return false;
     *physical=packed_bounds(c->clip);
     return (size_t)physical->width*physical->height/2<=UI_HOME_CLOCK_BASE_SLOT_BYTES;
@@ -63,9 +59,7 @@ static void base_copy(clock_canvas_t *c,EpdRect p,unsigned slot,bool restore){
 }
 static bool base_restore(clock_canvas_t *c,const struct tm *date){
     if(!s_base_cache)return false;
-#if !KIIKO_BOARD_METALIO47
     if(s_preview_preparing&&!c->preview)return false;
-#endif
     for(unsigned i=0;i<UI_HOME_CLOCK_BASE_CACHE_SLOTS;++i)if(base_key_matches(&s_base_keys[i],c,date)){
         // 只恢复请求区域，奇数列边界保留相邻半字节，不碰表盘外的文字。
         // Restore only the requested crop; odd boundaries preserve neighboring nibbles and labels.
@@ -85,9 +79,6 @@ static bool base_restore(clock_canvas_t *c,const struct tm *date){
 static void base_store(clock_canvas_t *c,const struct tm *date){
     EpdRect p;if(!base_candidate(c,&p))return;
     unsigned i=!s_base_keys[0].valid?0:!s_base_keys[1].valid?1:s_base_keys[0].age<s_base_keys[1].age?0:1;
-#if KIIKO_BOARD_METALIO47
-    if(c->preview)i=2u+c->style;
-#else
     if(c->preview){
         i=2;
         for(unsigned at=2;at<UI_HOME_CLOCK_BASE_CACHE_SLOTS;++at){
@@ -95,7 +86,6 @@ static void base_store(clock_canvas_t *c,const struct tm *date){
             if(s_base_keys[at].age<s_base_keys[i].age)i=at;
         }
     }
-#endif
     base_copy(c,p,i,false);
     s_base_keys[i]=(clock_base_key_t){.bounds=c->bounds,.clip=c->clip,.year=date->tm_year,.month=date->tm_mon,.day=date->tm_mday,.hour=date->tm_hour,.minute=date->tm_min,
         .rotation=epd_get_rotation(),.binary=c->binary,.valid=true,.age=++s_base_age,.style=c->style,.preview=c->preview};
@@ -424,7 +414,6 @@ void ui_home_clock_preview_draw(uint8_t *fb,EpdRect bounds,bool binary,ui_home_c
     ui_home_clock_style_draw(fb,bounds,&s_preview_date,binary,style);
     base_store(&c,&s_preview_date);
 }
-#if !KIIKO_BOARD_METALIO47
 bool ui_home_clock_preview_prepare(EpdRect bounds,bool binary,ui_home_clock_style_t style){
     const size_t bytes=(size_t)epd_width()*epd_height()/2;
     if(!s_base_cache||s_base_cache_bytes<UI_HOME_CLOCK_BASE_CACHE_BYTES||s_preview_preparing||bytes>UI_HOME_CLOCK_PREVIEW_OFFSET||
@@ -439,7 +428,6 @@ bool ui_home_clock_preview_prepare(EpdRect bounds,bool binary,ui_home_clock_styl
     s_preview_preparing=false;
     return ui_home_clock_preview_cached(bounds,binary,style);
 }
-#endif
 EpdRect ui_home_clock_second_area(EpdRect b,const struct tm *before,const struct tm *after){
     return ui_home_clock_phase_area(b,(unsigned)before->tm_sec*10,(unsigned)after->tm_sec*10);
 }

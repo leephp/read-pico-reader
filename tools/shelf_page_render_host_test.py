@@ -76,11 +76,11 @@ static void draw_shelf_guard(uint8_t *fb,EpdRect r,int slot){
     }
 }
 #if KIIKO_BOARD_METALIO47
-typedef struct{uint64_t words[8];} metalio_cover_key_t;
+typedef struct{uint64_t words[8];} cover_ram_key_t;
 static bool display_pipeline_enabled(void){return false;}
 static uint32_t esp_rom_crc32_le(uint32_t seed,const uint8_t *p,size_t n){return seed^checksum(p,n);}
-static bool metalio_cover_cache_get_rows(const metalio_cover_key_t*k,uint8_t*p,int stride,int span,int rows){(void)k;(void)p;(void)stride;(void)span;(void)rows;return false;}
-static bool metalio_cover_cache_put_rows(const metalio_cover_key_t*k,const uint8_t*p,int stride,int span,int rows){(void)k;(void)p;(void)stride;(void)span;(void)rows;return false;}
+static bool cover_ram_cache_get_rows(const cover_ram_key_t*k,uint8_t*p,int stride,int span,int rows){(void)k;(void)p;(void)stride;(void)span;(void)rows;return false;}
+static bool cover_ram_cache_put_rows(const cover_ram_key_t*k,const uint8_t*p,int stride,int span,int rows){(void)k;(void)p;(void)stride;(void)span;(void)rows;return false;}
 #endif
 '''
 MAIN=r'''

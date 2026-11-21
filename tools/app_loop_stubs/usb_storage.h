@@ -1,9 +1,7 @@
 #pragma once
-#include <stdbool.h>
-
-#if KIIKO_BOARD_METALIO47
-static inline bool usb_storage_active(void) { return false; }
-#else
+#include "common.h"
 bool test_usb_storage_active(void);
 static inline bool usb_storage_active(void) { return test_usb_storage_active(); }
-#endif
+static inline bool usb_storage_connected(void) { return true; }
+static inline esp_err_t usb_storage_reattach(void) { return ESP_OK; }
+static inline esp_err_t usb_storage_stop(void) { return ESP_OK; }

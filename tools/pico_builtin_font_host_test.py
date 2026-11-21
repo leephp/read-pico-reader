@@ -9,9 +9,9 @@ from font_hanzi_host_support import font_codepoints
 ROOT=Path(__file__).resolve().parents[1]
 marker=ROOT/'.kiiko-source-view.json';SOURCE=Path(json.loads(marker.read_text())['source']) if marker.exists() else ROOT
 baseline=(SOURCE/'main/assets/builtin.ttf').read_bytes()
-current_path=ROOT/'main/assets/builtin.ttf' if marker.exists() else ROOT/'boards/pico/src/main/assets/builtin.ttf'
+current_path=ROOT/'main/assets/builtin.ttf' if marker.exists() else ROOT/'main/assets/builtin.ttf'
 current=current_path.read_bytes();old=font_codepoints(baseline);new=font_codepoints(current);assert old<=new
-hanzi=(ROOT/'main/assets/ui-hanzi.bin' if marker.exists() else ROOT/'boards/pico/src/main/assets/ui-hanzi.bin').read_bytes();count=struct.unpack_from('<I',hanzi,4)[0];supplement=set(struct.unpack_from('<'+'H'*count,hanzi,16));covered=new|supplement
+hanzi=(ROOT/'main/assets/ui-hanzi.bin' if marker.exists() else ROOT/'main/assets/ui-hanzi.bin').read_bytes();count=struct.unpack_from('<I',hanzi,4)[0];supplement=set(struct.unpack_from('<'+'H'*count,hanzi,16));covered=new|supplement
 read=lambda path:{int(line.split('#',1)[0].strip(),16) for line in path.read_text().splitlines() if line.split('#',1)[0].strip()}
 common=read(ROOT/'tools/fixtures/reader-common-6500.txt');assert len(common)==6500 and common<=covered
 for filename in ['reader_extra_hanzi.txt','reader_extra_outlines.txt']:assert read(ROOT/'main/font'/filename)<=covered

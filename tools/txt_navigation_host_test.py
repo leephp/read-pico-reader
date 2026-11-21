@@ -39,6 +39,12 @@ static void tracked_free(void *p){
  for(unsigned i=0;i<256;++i)if(allocations[i].p==p){live-=allocations[i].n;allocations[i].p=NULL;break;}
  free(p);
 }
+void *heap_caps_realloc(void *p,size_t n,int caps){
+ if(!p)return heap_caps_malloc(n,caps);
+ size_t old=0;for(unsigned i=0;i<256;++i)if(allocations[i].p==p){old=allocations[i].n;break;}
+ void *q=heap_caps_malloc(n,caps);if(!q)return NULL;
+ memcpy(q,p,old<n?old:n);tracked_free(p);return q;
+}
 #define free tracked_free
 #include "book_txt.c"
 #include "book_source.c"
@@ -201,7 +207,7 @@ def expected_file(path, text, codec, bom, titles, legacy=(), separated_only=Fals
 
 with tempfile.TemporaryDirectory(prefix='kiiko-txt-nav-') as folder:
     t=Path(folder)
-    (t/'esp_heap_caps.h').write_text('#include <stddef.h>\n#define MALLOC_CAP_SPIRAM 1\n#define MALLOC_CAP_8BIT 2\nvoid *heap_caps_malloc(size_t,int);\n')
+    (t/'esp_heap_caps.h').write_text('#include <stddef.h>\n#define MALLOC_CAP_SPIRAM 1\n#define MALLOC_CAP_8BIT 2\nvoid *heap_caps_malloc(size_t,int);\nvoid *heap_caps_realloc(void*,size_t,int);\n')
     rows=[]
     originals=[]
     examples=[

@@ -18,11 +18,7 @@ typedef struct {
     transfer_credentials_t items[TRANSFER_SAVED_WIFI_MAX];
 } transfer_wifi_bank_t;
 static esp_err_t credentials_open(int mode, nvs_handle_t *handle) {
-#if KIIKO_BOARD_METALIO47
-    return nvs_open("metalio_wifi",mode,handle);
-#else
     return nvs_open("rp_wifi",mode,handle);
-#endif
 }
 static bool credentials_bank_valid(const transfer_wifi_bank_t *bank) {
     if(bank->magic!=TRANSFER_WIFI_BANK_MAGIC||bank->count>TRANSFER_SAVED_WIFI_MAX||bank->reserved[0]||bank->reserved[1])return false;

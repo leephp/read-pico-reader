@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: Apache-2.0
- * Share the status glyph cache across the S31 and Pico TrueType engines.
+ * Share the status glyph cache within the Pico TrueType engine.
  */
 
 // Retain only the glyphs needed by the status bar when slot 0 switches to the reader face.

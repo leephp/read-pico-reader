@@ -45,14 +45,8 @@
 #define LOCK_RESERVE (1024u * 1024u)
 #define LOCK_IMAGE_PIXELS (128u * 1024u)
 #define LOCK_FRAME_BYTES (684u * 1216u / 2u)
-#if KIIKO_BOARD_METALIO47
-#ifndef BOOK_LOCK_CACHE_PARENT
-#define BOOK_LOCK_CACHE_PARENT "/sdcard/.metalio_s31"
-#endif
-#else
 #ifndef BOOK_LOCK_CACHE_PARENT
 #define BOOK_LOCK_CACHE_PARENT "/sdcard/.readpico"
-#endif
 #endif
 #define LOCK_CACHE_DIR BOOK_LOCK_CACHE_PARENT "/locks"
 #define LOCK_CACHE_VERSION 1u
@@ -274,11 +268,7 @@ static lock_library_t *library_load(void) {
     library->cache_complete=true;library->font_path=ttf_font_path();
     library->cover_font_key = book_auto_cover_font_key();
     library->font_stat_valid=!stat(library->font_path,&library->font_stat);library->font_weight=ttf_get_weight();
-#if KIIKO_BOARD_METALIO47
-    (void)nvs_open("mt_shelf",NVS_READONLY,&library->hidden);
-#else
     (void)nvs_open("rp_shelf",NVS_READONLY,&library->hidden);
-#endif
     (void)book_store_roots(library->roots,&library->roots_count);
     if(book_store_roots_degraded())library->cache_complete=false;
     unsigned root_count=s_library_root_count;

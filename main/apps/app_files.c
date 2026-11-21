@@ -1410,10 +1410,6 @@ static app_redraw_t on_key(app_ctx_t *ctx, int key) {
 }
 static bool no_menu_handle(app_ctx_t *ctx) { (void)ctx; return false; }
 static bool files_navigation_visible(app_ctx_t *ctx){(void)ctx;return !(s_file_selecting&&s_view==FILE_VIEW_LIST);}
-#if KIIKO_BOARD_METALIO47
-// 自有操作栏保留与主底栏相同的灰底，但刷新不再裁掉这块区域。/ Preserve gray action-bar fill while allowing the whole bottom to refresh.
-static bool files_custom_footer_gray(app_ctx_t *ctx){(void)ctx;return main_page_visible(ctx)||s_file_grid||(s_file_selecting&&s_view==FILE_VIEW_LIST);}
-#endif
 static bool files_navigation_enabled(app_ctx_t *ctx){(void)ctx;return !s_file_selecting&&!s_batch_running&&s_view==FILE_VIEW_LIST;}
 static bool main_page_visible(app_ctx_t *ctx) {
     (void)ctx;

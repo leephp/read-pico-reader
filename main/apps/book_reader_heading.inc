@@ -1,5 +1,5 @@
 // 两块板共用正文与设置预览的题头绘制。/ Both boards share the heading renderer and picker samples.
-#if defined(ESP_PLATFORM) && !KIIKO_BOARD_METALIO47 && defined(__GNUC__) && !defined(__clang__)
+#if defined(ESP_PLATFORM) && defined(__GNUC__) && !defined(__clang__)
 #pragma GCC push_options
 #pragma GCC optimize("Os")
 #endif
@@ -279,6 +279,6 @@ static int measure_reader_flow_heading(EpdRect body, const char *text, size_t le
         s_heading_layout_size ? s_heading_layout_size : app_settings_book_heading_size());
 }
 
-#if defined(ESP_PLATFORM) && !KIIKO_BOARD_METALIO47 && defined(__GNUC__) && !defined(__clang__)
+#if defined(ESP_PLATFORM) && defined(__GNUC__) && !defined(__clang__)
 #pragma GCC pop_options
 #endif

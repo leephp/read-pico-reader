@@ -8,7 +8,7 @@ import json
 from home_cover_cache_host_test import function
 import argparse, re, subprocess, tempfile, os, io, zipfile, base64, struct, zlib, shlex, sys
 ROOT=Path(__file__).resolve().parents[1]
-p=argparse.ArgumentParser();p.add_argument('--cjson',type=Path);p.add_argument('--image-deps',type=Path);p.add_argument('--png-prefix',type=Path);p.add_argument('--board',choices=['pico','metalio47'],default='pico');args=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--cjson',type=Path);p.add_argument('--image-deps',type=Path);p.add_argument('--png-prefix',type=Path);p.add_argument('--board',choices=['pico'],default='pico');args=p.parse_args()
 cjson=args.cjson
 if not cjson:
     candidates=[ROOT/'managed_components/espressif__cjson/cJSON',Path('/private/tmp/kiiko-reader-mode-20261101/firmware/pico/source/managed_components/espressif__cjson/cJSON')]

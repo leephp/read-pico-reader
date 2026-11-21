@@ -8,7 +8,7 @@ const core=fs.readFileSync(path.join(root,'flash/metalio-flash-core.js'),'utf8')
 const installer=fs.readFileSync(path.join(root,'flash/metalio-installer.js'),'utf8').replace(/^import .*;\n/gm,'').replace(/await import\('[^']*esptool-js[^']*'\)/g,'await Promise.resolve({ESPLoader:FakeLoader})').replace(/await import\('[^']*metalio-transport[^']*'\)/g,'await Promise.resolve({S31Transport:FakeTransport})');
 function table(){
  const data=Buffer.alloc(0xc00,255),subtypes={nvs:2,ota:0,phy:1,ota_0:16,ota_1:17,fat:0x81,coredump:3};let index=0;
- for(const line of fs.readFileSync(path.join(root,'boards/metalio47/partitions.csv'),'utf8').split('\n')){
+ for(const line of fs.readFileSync(path.join(root,'tools/fixtures/s31-final-partitions.csv'),'utf8').split('\n')){
   if(!line||line.startsWith('#'))continue;const [name,kind,subtype,offset,size]=line.split(',').map(s=>s.trim()),at=index++*32;
   data.writeUInt16LE(0x50aa,at);data[at+2]=kind==='app'?0:1;data[at+3]=subtypes[subtype];data.writeUInt32LE(Number(offset),at+4);data.writeUInt32LE(Number(size),at+8);data.fill(0,at+12,at+28);data.write(name,at+12);data.writeUInt32LE(0,at+28);
  }

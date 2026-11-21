@@ -62,17 +62,6 @@ bool book_cover_load_list_gray(const char *path, const char *title, const char *
                                uint8_t out[BOOK_COVER_W * BOOK_COVER_H], bool allow_decode,
                                bool *pending, unsigned *width, unsigned *height);
 
-#if KIIKO_BOARD_METALIO47
-// S31 shared fast thumbnails and bounded idle disk-to-RAM prefetch.
-bool book_cover_fast_cache_get(const char *path,const char *title,const char *author,unsigned style,
-                               unsigned width,unsigned height,unsigned contrast,unsigned phase,
-                               uint8_t *bits,size_t bytes,bool *white_edge);
-void book_cover_fast_cache_put(const char *path,const char *title,const char *author,unsigned style,
-                               unsigned width,unsigned height,unsigned contrast,unsigned phase,
-                               const uint8_t *bits,size_t bytes,bool white_edge);
-bool book_cover_prefetch_cached(const char *path,const char *title,const char *author,bool list);
-#else
-#endif
 /// 快刷已处理的点阵封面；按书源身份、尺寸、对比度与抖动相位失效，像素带校验。
 /// Finished fast-cover pixels: invalidate by source, geometry, contrast and dither phase; validate payload.
 typedef struct { unsigned width, height, stride, contrast, phase; } book_fast_cover_key_t;
@@ -93,28 +82,17 @@ void book_cover_store_generated(const char *path,const char *title,const char *a
 /// Persist asynchronous pixels only under their original source identity, never a replaced book's key.
 void book_cover_fast_cache_write_checked(const char *path,const char *title,const char *author,book_fast_cover_key_t key,const uint8_t *pixels,bool edge,int64_t size,int64_t modified);
 
-#include "metalio_cover_cache.h"
+#include "cover_ram_cache.h"
 /// 用书架已知的文件身份读取成品，不访问存储。/ Read finished rasters using the catalog identity, with no storage I/O.
 bool book_cover_shelf_ram_read(const char *path, const char *title, const char *author,
         uint64_t size, int64_t modified, bool list, bool fast, book_fast_cover_key_t raster,
-        void *out, size_t capacity, metalio_cover_meta_t *meta);
+        void *out, size_t capacity, cover_ram_meta_t *meta);
 /// TXT 生成封面存于有界 RAM。/ Store generated TXT covers in the bounded RAM cache.
 void book_cover_shelf_ram_store(const char *path, const char *title, const char *author,
         uint64_t size, int64_t modified, uint64_t font_key, bool list, bool fast, book_fast_cover_key_t raster,
         const uint8_t *pixels, bool white_edge);
 bool book_cover_shelf_no_artwork(const char *path, const char *title, const char *author,
         uint64_t size, int64_t modified, bool remember);
-#if KIIKO_BOARD_METALIO47
-/// RAM 专用命中；前台未命中时不打开 TF 缓存文件。/ RAM-only lookup; no TF open on foreground misses.
-bool book_cover_peek_gray(const char *path,const char *title,const char *author,bool list,
-                         uint8_t *out,unsigned *width,unsigned *height);
-bool book_cover_fast_cache_peek(const char *path,const char *title,const char *author,
-                               book_fast_cover_key_t key,uint8_t *out,bool *white_edge);
-bool book_cover_prefetch_fast_cached(const char *path,const char *title,const char *author,
-                                    book_fast_cover_key_t key);
-
-#else
-#endif
 /// PNG预乘灰度及alpha；输出缓冲各width*height字节。/ Premultiplied PNG gray and alpha; each output buffer holds width*height bytes.
 bool book_png_file_layer(const char *path,unsigned width,unsigned height,uint8_t *gray,uint8_t *alpha);
 /// 流式透明层：仅保留源行窗口和一条输出行。/ Stream premultiplied gray/alpha through bounded row buffers.

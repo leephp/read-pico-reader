@@ -87,9 +87,10 @@ int ui_font_text_width_px(int px,const char *s){(void)px;(void)s;assert(0);retur
 void ui_font_measure_line_px(int px,const char *s,int *above,int *below){(void)px;(void)s;(void)above;(void)below;assert(0);}
 void ui_font_draw_text_px(uint8_t *fb,int x,int y,int px,const char *s,enum EpdFontFlags a,uint8_t fg,uint8_t bg,bool bw){(void)fb;(void)x;(void)y;(void)px;(void)s;(void)a;(void)fg;(void)bg;(void)bw;assert(0);}
 void ui_font_draw_title_px(uint8_t *fb,int x,int y,int px,const char *s,enum EpdFontFlags a){(void)fb;(void)x;(void)y;(void)px;(void)s;(void)a;assert(0);}
-static uint8_t pixels[400*200];
+static uint8_t pixels[400*200/2];
 static bool record_coverage;
-void epd_draw_pixel(int x,int y,uint8_t c,uint8_t *fb){assert(x>=0&&x<400&&y>=0&&y<200);if(record_coverage)fb[y*400+x]=c>>4;else{assert(c==0);fb[y*400+x]=1;}++painted;}
+void epd_draw_pixel(int x,int y,uint8_t c,uint8_t *fb){assert(x>=0&&x<400&&y>=0&&y<200);size_t at=(size_t)y*200+x/2;unsigned shift=(x%2)*4;fb[at]=(fb[at]&~(15u<<shift))|((c>>4)<<shift);++painted;}
+static bool has_ink(const uint8_t *fb,size_t n,unsigned bg){for(size_t i=0;i<n;++i)if(fb[i]!=(bg*17))return true;return false;}
 // 用真实字体逐词独立绘制期望图：扩展只落在空格，词内字形位置保持不变。
 // Independently rasterize words with the real face: only spaces expand, preserving all within-word glyph positions.
 static void english_justification(void){
@@ -99,25 +100,25 @@ static void english_justification(void){
   snprintf(text,sizeof(text),words==2?"%s %s":"%s %s %s",word,word,word);
   snprintf(chunk,sizeof(chunk),"%s ",word);
   int natural=ttf_text_width_px(px,text),extra=direction<0?-1:5;
-  uint8_t expected[sizeof(pixels)];memset(expected,15,sizeof(expected));
+  uint8_t expected[sizeof(pixels)];memset(expected,255,sizeof(expected));
   int advance=ttf_text_width_px(px,chunk);
   for(int index=0;index<words;++index)
    ttf_draw_text_px(expected,x+index*(advance+extra),y,px,word,EPD_DRAW_ALIGN_LEFT,0,15);
-  memset(pixels,15,sizeof(pixels));
+  memset(pixels,255,sizeof(pixels));
   ttf_draw_text_px_fitted(pixels,x,y,px,text,0,natural+(words-1)*extra,0,15);
   assert(!memcmp(pixels,expected,sizeof(pixels)));
   // 过度撑宽退回原字距；不在无空格或不换行空格处强行拉开。
   // Excessive expansion falls back; never stretch inside a word or across a nonbreaking space.
-  memset(expected,15,sizeof(expected));ttf_draw_text_px(expected,x,y,px,text,EPD_DRAW_ALIGN_LEFT,0,15);
-  memset(pixels,15,sizeof(pixels));
+  memset(expected,255,sizeof(expected));ttf_draw_text_px(expected,x,y,px,text,EPD_DRAW_ALIGN_LEFT,0,15);
+  memset(pixels,255,sizeof(pixels));
   ttf_draw_text_px_fitted(pixels,x,y,px,text,0,natural+(words-1)*3*(ttf_text_width_px(px," ")/2)+1,0,15);
   assert(!memcmp(pixels,expected,sizeof(pixels)));
  }
  const char *joined[]={"readers","red red","reader’s"};
  for(unsigned i=0;i<sizeof(joined)/sizeof(joined[0]);++i){
-  uint8_t expected[sizeof(pixels)];memset(expected,15,sizeof(expected));
+  uint8_t expected[sizeof(pixels)];memset(expected,255,sizeof(expected));
   ttf_draw_text_px(expected,x,y,px,joined[i],EPD_DRAW_ALIGN_LEFT,0,15);
-  memset(pixels,15,sizeof(pixels));
+  memset(pixels,255,sizeof(pixels));
   ttf_draw_text_px_fitted(pixels,x,y,px,joined[i],0,ttf_text_width_px(px,joined[i])+6,0,15);
   assert(!memcmp(pixels,expected,sizeof(pixels)));
  }
@@ -132,7 +133,7 @@ static void status_font(const char *system, const char *reader) {
  ttf_set_stroke_adjust(0);ttf_set_antialias(true);
  ttf_status_capture(text[1],28,26);
  record_coverage=true;
- memset(expected,15,sizeof(expected));
+ memset(expected,255,sizeof(expected));
  for(int i=0;i<4;++i){
   int px=i==1?26:28, above, below;
   ttf_measure_line_px(px,text[i],&above,&below);
@@ -141,7 +142,7 @@ static void status_font(const char *system, const char *reader) {
  assert(ttf_font_open(reader)==ESP_OK);
  ttf_set_stroke_adjust(2);ttf_set_antialias(false);
  unsigned opened=opens;
- memset(pixels,15,sizeof(pixels));
+ memset(pixels,255,sizeof(pixels));
  for(int i=0;i<4;++i)
   assert(ttf_status_draw(pixels,200,35+i*38,i==1?26:28,text[i],align[i]));
  assert(!memcmp(pixels,expected,sizeof(pixels)));
@@ -166,9 +167,9 @@ int main(int argc,char **argv){
    assert(ui_text_title_width_px(px,text,text)==ttf_text_width_px(px,text));
    int above,below;ttf_measure_line_px(px,text,&above,&below);
    assert((unsigned)(above+below)>old_height);old_height=above+below;
-   record_coverage=true;memset(pixels,15,sizeof(pixels));painted=0;
-   ui_text_title_vc(pixels,200,80,px,title,text,EPD_DRAW_ALIGN_CENTER);assert(painted>0);
-   uint8_t expected[sizeof(pixels)];memset(expected,15,sizeof(expected));
+   record_coverage=true;memset(pixels,255,sizeof(pixels));painted=0;
+   ui_text_title_vc(pixels,200,80,px,title,text,EPD_DRAW_ALIGN_CENTER);assert(has_ink(pixels,sizeof(pixels),15));
+   uint8_t expected[sizeof(pixels)];memset(expected,255,sizeof(expected));
    ttf_draw_text_px(expected,200,80+(above-below)/2,px,title,EPD_DRAW_ALIGN_CENTER,0,15);
    assert(!memcmp(pixels,expected,sizeof(pixels)));
    size_t warm=live;
@@ -179,12 +180,12 @@ int main(int argc,char **argv){
   // The settings name reuses the real face, restores AA and fits UI sizes without opening another font.
   for(ui_scale=100;ui_scale<=200;ui_scale+=50){
    ui_text_set_system_scale(true);ttf_set_antialias(false);
-   EpdRect box={30,30,190,80};memset(pixels,15,sizeof(pixels));painted=0;
-   draw_reading_font_name(pixels,box,text);assert(painted&&!ttf_get_antialias()&&ttf_font_selected()==0);
+   EpdRect box={30,30,190,80};memset(pixels,255,sizeof(pixels));painted=0;
+   draw_reading_font_name(pixels,box,text);assert(has_ink(pixels,sizeof(pixels),15)&&!ttf_get_antialias()&&ttf_font_selected()==0);
    uint8_t actual[sizeof(pixels)];memcpy(actual,pixels,sizeof(pixels));
    int px=ui_text_effective_px(27),above,below;char fitted[64];strcpy(fitted,text);
    while(ttf_text_width_px(px,fitted)>box.width){size_t n=strlen(fitted)-1;while(n&&((unsigned char)fitted[n]&0xc0)==0x80)--n;fitted[n]=0;}
-   ttf_measure_line_px(px,fitted,&above,&below);ttf_set_antialias(true);memset(pixels,15,sizeof(pixels));
+   ttf_measure_line_px(px,fitted,&above,&below);ttf_set_antialias(true);memset(pixels,255,sizeof(pixels));
    ttf_draw_text_px(pixels,box.x,box.y+box.height/2+(above-below)/2,px,fitted,EPD_DRAW_ALIGN_LEFT,0,15);
    assert(!memcmp(actual,pixels,sizeof(pixels))&&opens==initial_opens&&active_fd==1);
   }
@@ -195,16 +196,16 @@ int main(int argc,char **argv){
   for(ui_scale=100;ui_scale<=200;ui_scale+=100)for(int background=0xc0;background<=0xff;background+=0x3f){
    ui_text_set_system_scale(true);ui_text_set_system_font(!face);ttf_set_stroke_adjust(0);ttf_set_antialias(false);
    uint8_t back=background>>4;EpdRect box={20,30,300,100};
-   memset(pixels,back,sizeof(pixels));record_coverage=true;painted=0;
+   memset(pixels,back*17,sizeof(pixels));record_coverage=true;painted=0;
    toc_title(pixels,box,30,text,(uint8_t)background);
-   assert(painted&&!ttf_get_antialias()&&opens==initial_opens&&active_fd==1);
+   assert(has_ink(pixels,sizeof(pixels),15)&&!ttf_get_antialias()&&opens==initial_opens&&active_fd==1);
    uint8_t actual[sizeof(pixels)];memcpy(actual,pixels,sizeof(pixels));
    int px=ui_text_effective_px(30),above,below;char shown[64];strcpy(shown,text);
    px=ui_text_title_fit(shown,px,box.width,text);ttf_measure_line_px(px,shown,&above,&below);
-   memset(pixels,back,sizeof(pixels));ttf_set_antialias(true);
+   memset(pixels,back*17,sizeof(pixels));ttf_set_antialias(true);
    ttf_draw_text_px(pixels,box.x,box.y+box.height/2+(above-below)/2,px,shown,EPD_DRAW_ALIGN_LEFT,0,back);
    assert(!memcmp(actual,pixels,sizeof(pixels)));
-   unsigned edges=0;for(unsigned n=0;n<sizeof(pixels);++n){assert(pixels[n]<=back);edges+=pixels[n]>0&&pixels[n]<back;}
+   unsigned edges=0;for(unsigned n=0;n<sizeof(pixels);++n){unsigned a=pixels[n]&15,b=pixels[n]>>4;assert(a<=back&&b<=back);edges+=(a>0&&a<back)+(b>0&&b<back);}
    assert(edges);
   }
   ui_scale=100;ui_text_set_system_scale(!face);
@@ -228,20 +229,20 @@ int main(int argc,char **argv){
   record_coverage=true;
   for(int level=-2;level<=2;++level){
    ttf_set_stroke_adjust(level);ttf_set_antialias(true);
-   memset(pixels,15,sizeof(pixels));ttf_draw_text_px(pixels,20,80,48,text,EPD_DRAW_ALIGN_LEFT,0,15);
+   memset(pixels,255,sizeof(pixels));ttf_draw_text_px(pixels,20,80,48,text,EPD_DRAW_ALIGN_LEFT,0,15);
    uint8_t smooth[sizeof(pixels)];memcpy(smooth,pixels,sizeof(smooth));size_t warm=live;
    unsigned mid=0;for(unsigned n=0;n<sizeof(pixels);++n)if(pixels[n]>0&&pixels[n]<15)++mid;
    assert(mid);
    ttf_set_antialias(false);assert(!ttf_get_antialias());
    for(int style=0;style<3;++style){
-    memset(pixels,15,sizeof(pixels));
+    memset(pixels,255,sizeof(pixels));
     if(!style)ttf_draw_text_px(pixels,20,80,48,text,EPD_DRAW_ALIGN_LEFT,0,15);
     else if(style==1)ttf_draw_text_px_spaced(pixels,20,80,48,text,2,0,15);
     else ttf_draw_text_px_fitted(pixels,20,80,48,text,0,native_width+9,0,15);
-    unsigned ink=0;for(unsigned n=0;n<sizeof(pixels);++n){assert(pixels[n]==0||pixels[n]==15);ink+=pixels[n]==0;}
+    unsigned ink=0;for(unsigned n=0;n<sizeof(pixels);++n){assert((pixels[n]&15)==0||(pixels[n]&15)==15);assert((pixels[n]>>4)==0||(pixels[n]>>4)==15);ink+=pixels[n]==0;}
     assert(ink&&ttf_text_width_px(48,text)==native_width&&live==warm&&active_fd==1);
    }
-   ttf_set_antialias(true);memset(pixels,15,sizeof(pixels));
+   ttf_set_antialias(true);memset(pixels,255,sizeof(pixels));
    ttf_draw_text_px(pixels,20,80,48,text,EPD_DRAW_ALIGN_LEFT,0,15);assert(!memcmp(smooth,pixels,sizeof(smooth))&&live==warm);
   }
   record_coverage=false;
@@ -270,6 +271,6 @@ int main(int argc,char **argv){
     subprocess.run(flags + ['-Dopen=title_test_open', '-Dclose=title_test_close', '-c',
                             str(ROOT / 'main/font/ttf_font.c'), '-o', str(work / 'ttf.o')], check=True)
     gc = '-Wl,-dead_strip' if os.uname().sysname == 'Darwin' else '-Wl,--gc-sections'
-    subprocess.run(flags +font_hanzi_host_sources(ROOT,work)+ [str(work / 'test.c'), str(work / 'assets.c'), str(work / 'ttf.o'),
+    subprocess.run(flags +font_hanzi_host_sources(ROOT,work,400,200)+ [str(work / 'test.c'), str(work / 'assets.c'), str(work / 'ttf.o'),
                             str(ROOT / 'main/ui/ui_kit.c'), '-lm', gc, '-o', str(work / 'test')], check=True)
     subprocess.run([str(work / 'test'), str(work / 'system.ttf'), str(work / 'reader.ttf')], check=True)

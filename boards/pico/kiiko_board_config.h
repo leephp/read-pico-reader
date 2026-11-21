@@ -9,12 +9,6 @@
  */
 #pragma once
 
-#ifndef KIIKO_BOARD_METALIO47
-#define KIIKO_BOARD_METALIO47 0
-#endif
-#if KIIKO_BOARD_METALIO47 != 0 && KIIKO_BOARD_METALIO47 != 1
-#error "KIIKO_BOARD_METALIO47 must be 0 or 1"
-#endif
 
 /* ---- 身份 / Identity ---- */
 #define KIIKO_BOARD_ID "pico"

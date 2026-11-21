@@ -13,7 +13,6 @@ source = r'''
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
-#define KIIKO_BOARD_METALIO47 1
 #define ESP_OK 0
 #define ESP_ERR_INVALID_STATE 1
 #define ESP_ERR_NVS_NOT_FOUND 2
@@ -32,7 +31,7 @@ static int fake_time(struct timeval *tv, void *tz) {
 #define gettimeofday fake_time
 static struct {char key[24]; size_t size; uint8_t data[512];} blobs[5];
 static int nvs_open(const char *name, int mode, nvs_handle_t *handle) {
-    assert(!strcmp(name,"mt_ticket")); (void)mode; *handle = 1; return ESP_OK;
+    assert(!strcmp(name,"rp_ticket")); (void)mode; *handle = 1; return ESP_OK;
 }
 static int nvs_get_blob(nvs_handle_t h, const char *key, void *data, size_t *len) {
     assert(h == 1);

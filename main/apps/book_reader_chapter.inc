@@ -1,6 +1,6 @@
 /* Shared reader chapter lookup. / 双机共用正文位置的章节识别。 */
 #include "../book/book_chapter_label.h"
-#if defined(ESP_PLATFORM) && !KIIKO_BOARD_METALIO47 && defined(__GNUC__) && !defined(__clang__)
+#if defined(ESP_PLATFORM) && defined(__GNUC__) && !defined(__clang__)
 #pragma GCC push_options
 #pragma GCC optimize("Os")
 #endif
@@ -58,6 +58,6 @@ static void reader_current_chapter(char *dst, size_t cap) {
     }
     if (!strcmp(dst, "本章") || !strcmp(dst, "章节")) dst[0] = 0;
 }
-#if defined(ESP_PLATFORM) && !KIIKO_BOARD_METALIO47 && defined(__GNUC__) && !defined(__clang__)
+#if defined(ESP_PLATFORM) && defined(__GNUC__) && !defined(__clang__)
 #pragma GCC pop_options
 #endif

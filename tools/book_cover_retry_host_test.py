@@ -238,7 +238,7 @@ int main(void) {
 with tempfile.TemporaryDirectory(prefix="kiiko-cover-retry-") as directory:
     tmp = Path(directory)
     (tmp / "test.c").write_text(source)
-    for board in (0, 1):
+    for board in (0,):
         subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-fsanitize=address,undefined",
                         f"-DKIIKO_BOARD_METALIO47={board}", str(tmp / "test.c"), "-o", str(tmp / "test")],
                        check=True)

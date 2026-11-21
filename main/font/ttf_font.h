@@ -68,42 +68,12 @@ void ttf_font_close_embedded(void);
 /// 灰阶字覆盖率伽马。小于 1 抬中间覆盖率，抗锯齿边缘更深；满墨仍是 0。
 /// Coverage gamma for gray glyphs. Below 1 lifts mid coverage so AA edges are darker; full ink stays 0.
 #ifndef TTF_COVER_GAMMA
-#if KIIKO_BOARD_METALIO47
-// 用户2026-11-12 调试页实机标定：S31 覆盖率 gamma 0.800 最佳；Pico 保持原 0.5。
-// User2026-11-12 hardware tuning via the debug page: S31 wants coverage gamma 0.800; Pico keeps 0.5.
-#define TTF_COVER_GAMMA 0.8f
-#else
 #define TTF_COVER_GAMMA 0.5f
-#endif
-#endif
-#if KIIKO_BOARD_METALIO47
-/// 用户2026-11-12 调试页实机标定：S31 补字灰边偏置 256、目标墨量 122% 为最佳。
-/// User2026-11-12 hardware tuning via the debug page: S31 supplement edge bias 256, ink 122%.
-#define TTF_AA_SUPPLEMENT_EDGE_BIAS 256
-#define TTF_AA_SUPPLEMENT_INK_PERCENT 122
 #endif
 
 esp_err_t ttf_font_init(void);
 esp_err_t ttf_font_open(const char* path);
 esp_err_t ttf_font_open_builtin(void);
-#if KIIKO_BOARD_METALIO47
-#include <stdatomic.h>
-typedef struct ttf_font_prepared ttf_font_prepared_t;
-/// 后台准备独立字体，失败不动活动槽；取消在每次文件读取前检查。
-/// Prepare an independent face off-thread without touching live slots; reads cooperate with cancellation.
-ttf_font_prepared_t *ttf_font_prepare(const char *path, const atomic_bool *cancel, esp_err_t *error);
-/// 持绘制锁交换新旧字体；对象随后持有旧字体，可再次交换回滚。
-/// Swap while holding the draw lock; the object retains the old face for rollback.
-void ttf_font_publish(ttf_font_prepared_t *prepared);
-/// 未发布对象可在后台释放，旧活动字体须在绘制锁内释放。
-/// Discard unpublished faces off-thread; retired live faces require the draw lock.
-void ttf_font_prepared_free(ttf_font_prepared_t *prepared);
-/// 名称预览复用活动字库或短借空槽；调用方持有绘制锁，无整份字体常驻，不覆盖书内槽。
-/// Draw a centered name using the active face or an empty temporary slot; caller holds the draw lock.
-bool ttf_font_draw_preview(const char *path, uint8_t *fb, int x, int y, int px,
-                           const char *text, int width);
-#else
-#endif
 typedef bool (*ttf_face_draw_fn)(void *context);
 /// 绘制期间使用指定字体，随后还原活动槽和字体分段；调用方持有绘制锁。
 /// Use the chosen face for the draw and restore the prior slot and runs. Caller holds the draw lock.
@@ -220,9 +190,6 @@ int ttf_get_stroke_adjust_fine(void);
 /// 绘制时使用灰阶覆盖或二值边缘，复用同一份字形缓存，不改变字宽。/ Select gray coverage or binary edges while drawing, reusing glyphs without changing advances.
 void ttf_set_antialias(bool enabled);
 bool ttf_get_antialias(void);
-#if KIIKO_BOARD_METALIO47 && defined(ESP_PLATFORM)
-void ttf_set_reader_body_aa(bool enabled);
-#endif
 int ttf_get_weight(void);
 
 void ttf_font_cache_clear(void);
@@ -234,20 +201,3 @@ void ttf_font_cache_clear(void);
 size_t ttf_font_cache_clear_all(void);
 void ttf_bench_begin(void);
 void ttf_bench_end(ttf_bench_stats_t* out);
-#if KIIKO_BOARD_METALIO47
-
-/// 浅睡保留字库/字形缓存和槽位，只暂停 TF 文件句柄。/ Keep faces/glyph caches while pausing TF handles.
-esp_err_t ttf_font_suspend_io(void);
-bool ttf_font_io_pending(void);
-esp_err_t ttf_font_resume_io(void);
-/// 用户2026-11-12：S31 调试页抗锯齿微调入口；只用于本地微调，选定数值后再固化默认。
-/// User2026-11-12: S31 debug-page AA tuning entry; local tuning only, defaults are baked afterwards.
-void ttf_aa_tune_set_cover_gamma(float gamma);
-float ttf_aa_tune_get_cover_gamma(void);
-void ttf_aa_tune_set_edge_bias(int bias);
-int ttf_aa_tune_get_edge_bias(void);
-void ttf_aa_tune_set_ink_percent(int percent);
-int ttf_aa_tune_get_ink_percent(void);
-void ttf_aa_tune_reset(void);
-#else
-#endif

@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess,tempfile
 from home_cover_cache_host_test import function
 ROOT=Path(__file__).resolve().parents[1]
-S=ROOT/'boards/pico/src/main/sleep.c';B=ROOT/'boards/pico/src/main/app_main.c'
+S=ROOT/'main/sleep.c';B=ROOT/'main/app_main.c'
 unit=r'''
 #include <assert.h>
 #include <stdbool.h>

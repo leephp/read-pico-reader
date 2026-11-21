@@ -44,6 +44,6 @@ int main(void){
 '''
 with tempfile.TemporaryDirectory() as folder:
     p=Path(folder);(p/'test.c').write_text(unit)
-    for board in (0,1):
+    for board in (0,):
         subprocess.run(['cc','-std=gnu11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-DKIIKO_BOARD_METALIO47='+str(board),'-I'+str(ROOT/'main'),str(p/'test.c'),'-o',str(p/'test')],check=True)
         subprocess.run([str(p/'test')],check=True)

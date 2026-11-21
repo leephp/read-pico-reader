@@ -20,7 +20,7 @@ FLASH_SIZES = {'16MB': 16 * 1024 * 1024, '8MB': 8 * 1024 * 1024, '4MB': 4 * 1024
 
 
 def board_dirs():
-    return sorted(path for path in BOARDS.iterdir() if path.is_dir())
+    return sorted(path for path in BOARDS.iterdir() if path.is_dir() and (path / 'board.json').is_file())
 
 
 def fail(problems, message):

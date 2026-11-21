@@ -2,11 +2,7 @@
 // Shared by both boards: defer reflow out of touch callbacks and retain the text anchor.
 static app_redraw_t apply_reader_rule(app_ctx_t *ctx) {
     (void)ctx;
-#if KIIKO_BOARD_METALIO47
-    pause_reader_prep();
-#else
     invalidate_prep();
-#endif
     s_reader_rule_pending = true;
     return APP_REDRAW_NONE;
 }

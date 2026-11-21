@@ -71,7 +71,7 @@ int main(int argc,char **argv){
 with tempfile.TemporaryDirectory(prefix='progress-boot-') as d:
  p=Path(d);(p/'test.c').write_text(unit)
  (p/'esp_timer.h').write_text('#pragma once\n#include <stdint.h>\nint64_t esp_timer_get_time(void);\n')
- flags=['cc','-std=gnu11','-D_DEFAULT_SOURCE','-DESP_PLATFORM','-DKIIKO_BOARD_METALIO47=1',
+ flags=['cc','-std=gnu11','-D_DEFAULT_SOURCE','-DESP_PLATFORM',
   '-Wall','-Wextra','-Werror','-Wno-unused-function','-Wno-unused-variable','-fsanitize=address,undefined',
   '-ffunction-sections','-fdata-sections','-I'+str(p),f'-DBOOK_PROGRESS_DIR="{p}/progress"',
   '-I'+str(R/'tools/book_storage_stubs'),'-I'+str(R/'main/book'),'-I'+str(R/'main'),

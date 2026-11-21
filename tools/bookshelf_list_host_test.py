@@ -53,12 +53,12 @@ void lock_pin_wipe(void *p,unsigned n){volatile uint8_t *b=p;while(n--)*b++=0;}
 static enum EpdRotation display_rotation=EPD_ROT_PORTRAIT;
 static struct{int width,height;} host_display={1216,684};
 static typeof(host_display)*display=&host_display;
-typedef struct{uint64_t words[8];} metalio_cover_key_t;
+typedef struct{uint64_t words[8];} cover_ram_key_t;
 static bool display_pipeline_enabled(void){return false;}
 static int app_settings_system_contrast(void){return 100;}
 static uint32_t esp_rom_crc32_le(uint32_t seed,const uint8_t *p,size_t n){while(n--)seed=seed*31+*p++;return seed;}
-static bool metalio_cover_cache_get_rows(const metalio_cover_key_t*k,uint8_t*p,int stride,int span,int rows){(void)k;(void)p;(void)stride;(void)span;(void)rows;return false;}
-static bool metalio_cover_cache_put_rows(const metalio_cover_key_t*k,const uint8_t*p,int stride,int span,int rows){(void)k;(void)p;(void)stride;(void)span;(void)rows;return false;}
+static bool cover_ram_cache_get_rows(const cover_ram_key_t*k,uint8_t*p,int stride,int span,int rows){(void)k;(void)p;(void)stride;(void)span;(void)rows;return false;}
+static bool cover_ram_cache_put_rows(const cover_ram_key_t*k,const uint8_t*p,int stride,int span,int rows){(void)k;(void)p;(void)stride;(void)span;(void)rows;return false;}
 int epd_width(void){return display_rotation==EPD_ROT_PORTRAIT||display_rotation==EPD_ROT_INVERTED_PORTRAIT?1216:684;}
 int epd_height(void){return display_rotation==EPD_ROT_PORTRAIT||display_rotation==EPD_ROT_INVERTED_PORTRAIT?684:1216;}
 int epd_rotated_display_width(void){return 684;}int epd_rotated_display_height(void){return 1216;}

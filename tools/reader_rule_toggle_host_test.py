@@ -100,7 +100,7 @@ int main(void){
 '''
 with tempfile.TemporaryDirectory() as folder:
  p=Path(folder);(p/'test.c').write_text(unit)
- for board in (0,1):
+ for board in (0,):
   subprocess.run(['cc','-std=c11','-D_DEFAULT_SOURCE','-Wall','-Wextra','-Werror','-Wno-unused-function',
    f'-DKIIKO_BOARD_METALIO47={board}','-fsanitize=address,undefined','-I'+str(R/'tools/book_layout_stubs'),'-I'+str(R/'tools/book_source_host_stubs'),
    '-I'+str(R/'main/book'),'-I'+str(R/'main'),str(p/'test.c'),str(R/'main/book/book_layout.c'),str(R/'main/book/html_text.c'),'-o',str(p/'test')],check=True)

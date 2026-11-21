@@ -24,13 +24,6 @@ typedef struct zip_reader zip_reader_t;
 esp_err_t zip_open(const char* path, zip_reader_t** out);
 /// 释放所有资源，允许 NULL。/ Release all resources; accepts NULL.
 void zip_close(zip_reader_t* reader);
-#if KIIKO_BOARD_METALIO47
-/// 浅睡保留目录，只关闭/重开只读句柄；源文件改变则拒绝恢复。
-/// Retain the index across light sleep; reject a changed source on reopening.
-esp_err_t zip_suspend_io(zip_reader_t *reader);
-esp_err_t zip_resume_io(zip_reader_t *reader, const char *path);
-#else
-#endif
 /// 按精确路径查找，未找到返回 -1。/ Find an exact path, returning -1 if absent.
 int zip_find(const zip_reader_t* reader, const char* name);
 /// 已验证条目的借用路径；读者关闭后失效。/ Borrowed validated entry path, valid until close.
@@ -50,11 +43,3 @@ typedef struct zip_stream zip_stream_t;
 esp_err_t zip_stream_open(zip_reader_t *reader, int index, zip_stream_t **out);
 esp_err_t zip_stream_read(zip_stream_t *stream, void *dst, size_t cap, size_t *received);
 void zip_stream_close(zip_stream_t *stream);
-#if KIIKO_BOARD_METALIO47
-
-/// 每次最多读 4KiB，预取至多 512KiB 的压缩章节；实际提取仍验证 CRC。
-/// Read at most 4 KiB per call, caching at most 512 KiB; extraction still verifies CRC.
-int zip_prefetch_step(zip_reader_t *reader,int index);
-void zip_prefetch_clear(zip_reader_t *reader);
-#else
-#endif

@@ -37,9 +37,9 @@ def icon_source(name: str) -> Path:
     return (ANIMATE_DIR if name.startswith(("pager-", "animate-")) else SOURCE_DIR) / f"{name}.svg"
 view_marker = ROOT / '.kiiko-source-view.json'
 DEFAULT_BOARD = os.environ.get('KIIKO_BOARD') or (json.loads(view_marker.read_text())['board'] if view_marker.exists() else 'pico')
-if DEFAULT_BOARD not in ('pico', 'metalio47'):
+if DEFAULT_BOARD not in ('pico',):
     raise ValueError('Unknown KIIKO_BOARD: ' + DEFAULT_BOARD)
-HEADER = ROOT / 'boards' / DEFAULT_BOARD / 'src/main/assets/ui_icons.h'
+HEADER = ROOT / 'main/assets/ui_icons.h'
 PREVIEW = ROOT / f'docs/local/ui-icons-{DEFAULT_BOARD}-preview.png'
 
 # 掩模边长。显示端最大画到 72px（电源弹窗的两枚大图标），其余都在 48px 以下，
@@ -101,10 +101,10 @@ COMMON_ICONS = (
 )
 
 def icons_for_board(board):
-    if board not in ('pico', 'metalio47'):
+    if board not in ('pico',):
         raise ValueError('Unknown board: ' + board)
     split = COMMON_ICONS.index('pager-chevron-first')
-    extra = ('sun', 'thermometer', 'lightbulb') if board == 'metalio47' else ('timer',)
+    extra = ('timer',)
     return COMMON_ICONS[:split] + extra + COMMON_ICONS[split:]
 
 ICONS = icons_for_board(DEFAULT_BOARD)
@@ -608,12 +608,12 @@ def _unpack(packed: list[int], count: int) -> list[int]:
 
 def main() -> None:
     global HEADER, PREVIEW, ICONS
-    parser = argparse.ArgumentParser(description='Generate board artwork without replacing the shared selector header')
-    parser.add_argument('--board', choices=('pico', 'metalio47', 'all'), default=DEFAULT_BOARD)
+    parser = argparse.ArgumentParser(description='Generate Pico artwork in the canonical source tree')
+    parser.add_argument('--board', choices=('pico',), default=DEFAULT_BOARD)
     args = parser.parse_args()
-    for board in (('pico', 'metalio47') if args.board == 'all' else (args.board,)):
+    for board in (args.board,):
         ICONS = icons_for_board(board)
-        HEADER = ROOT / 'boards' / board / 'src/main/assets/ui_icons.h'
+        HEADER = ROOT / 'main/assets/ui_icons.h'
         PREVIEW = ROOT / f'docs/local/ui-icons-{board}-preview.png'
         missing = [n for n in ICONS if not icon_source(n).exists()]
         if missing:

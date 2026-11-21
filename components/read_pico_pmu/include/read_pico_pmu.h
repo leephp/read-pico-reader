@@ -101,11 +101,8 @@ typedef struct {
     uint16_t diag_host_rst;
     uint16_t diag_adc;
 
-#if KIIKO_BOARD_METALIO47
-#else
     bool display_soc_valid; ///< 主机高段稳定结果有效；原始PMU字段不变 / Host upper-SOC result; raw PMU fields remain intact
     uint16_t display_soc_permille;
-#endif
     bool quick_ok;
     uint16_t qb_mv;
     uint16_t qb_soc;
@@ -115,10 +112,7 @@ typedef struct {
     pmu_event_t event;
     pmu_config_t config;
     uint32_t unix_sec;
-#if KIIKO_BOARD_METALIO47
-#else
     uint16_t unix_millis; ///< TIME_GET 毫秒部分 / Millisecond fraction
-#endif
     uint8_t time_synced;
     uint8_t alarm_mode;
     uint32_t alarm_remain;
@@ -146,10 +140,7 @@ static inline int pmu_battery_percent(const pmu_snapshot_t *p) {
         if (!p->status_ok || !(p->flags & PMU_STATUS_BATTERY_VALID)) return -1;
         soc = p->soc_permille;
     }
-#if KIIKO_BOARD_METALIO47
-#else
     if(soc<=1000 && p->display_soc_valid)soc=p->display_soc_permille;
-#endif
     return soc <= 1000 ? (soc + 5) / 10 : -1;
 }
 static inline bool pmu_battery_charging(const pmu_snapshot_t *p) {
@@ -219,14 +210,6 @@ bool read_pico_pmu_take_key_short(void);
 bool read_pico_pmu_take_key_wakeup(void);
 /// 单击策略消费新去抖动作；不读取持续按住电平。/ Single policy consumes a fresh debounced action, never a held level.
 bool read_pico_pmu_take_key_wakeup_single(void);
-#if KIIKO_BOARD_METALIO47
-/// S31改动扩展口方向前暂停采样；有待处理按键时拒绝，恢复后重新同步电平。
-/// Pause S31 sampling before changing expander directions; reject pending keys and resync levels on resume.
-esp_err_t read_pico_pmu_keys_pause(void);
-void read_pico_pmu_keys_resume(void);
-/// 仅在P17独占EXT1唤醒后补记已释放的真实短按，不直接解锁。/ Latch an already released P17-only EXT1 press without bypassing unlock policy.
-void read_pico_pmu_latch_power_wakeup(void);
-#else
 /// 开机证据只能消费一次。/ Boot evidence is consumed once.
 bool read_pico_pmu_take_boot_short_press(void);
 /// 握手前确认的按键上电证据，仅消费一次；调用方仍须检查主控上电复位、恢复记录和解锁策略。
@@ -235,7 +218,6 @@ bool read_pico_pmu_take_boot_power_key(void);
 /// 单击启动门禁放行后调用；普通动作消费器非阻塞清理残留，确认释放且队列为空后才恢复按键。
 /// After a one-press boot is accepted, discard its tail without blocking; normal actions resume after validated release and an empty queue.
 void read_pico_pmu_rearm_after_boot_key(void);
-#endif
 /// 保证 RUNNING 后发 HOST_SOFT_SLEEP，等到 STATUS 为 SOFT_SLEEP（随后 EN=0）。
 /// / After RUNNING, send HOST_SOFT_SLEEP and wait for STATUS SOFT_SLEEP (then EN=0).
 esp_err_t read_pico_pmu_report_sleep(void);

@@ -26,21 +26,11 @@ def reject(call):
 
 
 def source_and_cmake_tests():
-    nested = '''#if OTHER
-#if KIIKO_BOARD_METALIO47
-s31
-#else
-s3
-#endif
-#endif
-// #if KIIKO_BOARD_METALIO47
-const char *s = "#endif";
-'''
-    assert 's31\n' in select_source(nested, 'metalio47')
-    assert 's3\n' in select_source(nested, 'pico')
-    assert '#if OTHER' in select_source(nested, 'pico')
-    reject(lambda: select_source(nested, 'unknown'))
-    reject(lambda: select_source('#if KIIKO_BOARD_METALIO47\n', 'pico'))
+    assert BOARDS == ('pico',)
+    assert select_source('int pico;\n', 'pico') == 'int pico;\n'
+    for unsupported in ('unknown', 'metalio47', 'metalio_s31'):
+        reject(lambda: metadata(unsupported))
+        reject(lambda: select_source('', unsupported))
     with tempfile.TemporaryDirectory(prefix='kiiko-board-test-') as directory:
         temp = Path(directory)
         cc = shutil.which('cc')
@@ -55,7 +45,6 @@ const char *s = "#endif";
                               'KIIKO_BOARD_SETTINGS_NAMESPACE);}\n')
             binary = temp / board
             subprocess.run([cc, '-I', str(ROOT / 'main'),
-                            '-DKIIKO_BOARD_METALIO47=' + str(int(board == 'metalio47')),
                             str(source), '-o', str(binary)], check=True)
             assert subprocess.check_output([str(binary)], text=True) == '|'.join(map(str,
                 [board, info['project'], info['image_chip_id'], info['settings_namespace']]))
@@ -72,7 +61,7 @@ function(component_scope component source)
   if(NOT KIIKO_SOURCE_ROOT OR NOT chosen)
     message(FATAL_ERROR "Board scope lost")
   endif()
-  if(component STREQUAL "main" AND NOT chosen MATCHES "/boards/{board}/src/main/app_main.c$")
+  if(component STREQUAL "main" AND NOT chosen STREQUAL "app_main.c")
     message(FATAL_ERROR "Wrong board source selected: ${{chosen}}")
   endif()
 endfunction()
@@ -81,14 +70,14 @@ component_scope("components/ble_page_turner" "src/ble_page_turner.c")
 component_scope("main" "app_main.c")
 ''')
             subprocess.run(['cmake', '-P', str(script)], check=True)
-            wrong_target = metadata('metalio47' if board == 'pico' else 'pico')['idf_target']
+            wrong_target = 'esp32s31'
             result = subprocess.run(['cmake', '-S', str(ROOT), '-B', str(temp / (board + '-wrong-target')),
                                      '-DKIIKO_BOARD=' + board, '-DIDF_TARGET=' + wrong_target],
                                     capture_output=True, text=True)
             assert result.returncode and f"{board} requires {info['idf_target']}" in result.stderr
         script.write_text(f'set(KIIKO_BOARD invalid)\ninclude("{ROOT.as_posix()}/cmake/board.cmake")\n')
         result = subprocess.run(['cmake', '-P', str(script)], capture_output=True, text=True)
-        assert result.returncode and 'Unknown KIIKO_BOARD' in result.stderr
+        assert result.returncode and 'Only Pico is supported' in result.stderr
 
 
 def source_view_tests():
@@ -100,7 +89,7 @@ def source_view_tests():
             preset.mkdir(parents=True)
             (preset / 'dependencies.lock').write_text(board)
         source = root / 'main' / 'example.c'
-        original = '#if KIIKO_BOARD_METALIO47\nint s31;\n#else\nint s3;\n#endif\n'
+        original = 'int pico;\n'
         source.write_text(original)
         output = root / 'scratch' / 'pico'
         materialize(root, output, 'pico')
@@ -132,57 +121,35 @@ def local_experiment_flags():
             base=[sys.executable,str(ROOT/'tools/build_firmware.py'),'--board',board,
                   '--idf-'+board,str(sdk),'--dry-run']
             plan=json.loads(subprocess.check_output(base,text=True))
-            assert '-DMETALIO_PIE_PIXELS=OFF' in plan['command']
-            assert '-DMETALIO_LOCAL_LATENCY=OFF' in plan['command']
-            assert '-DMETALIO_TEXT_RIPPLE_EXPERIMENT=OFF' in plan['command']
-            assert '-DMETALIO_SHELF37_EXPERIMENT=OFF' in plan['command']
-            assert '-DMETALIO_LOCAL_TRANSFER_START=OFF' in plan['command']
-            if board=='metalio47':
-                shelf=json.loads(subprocess.check_output(base+['--s31-shelf37'],text=True))
-                assert '-DMETALIO_SHELF37_EXPERIMENT=ON' in shelf['command']
-                assert '-DMETALIO_LOCAL_LATENCY=OFF' in shelf['command']
-                transfer=json.loads(subprocess.check_output(base+['--s31-transfer-startup-test'],text=True))
-                assert '-DMETALIO_LOCAL_TRANSFER_START=ON' in transfer['command']
-                assert '-DMETALIO_LOCAL_LATENCY=OFF' in transfer['command']
-                plan=json.loads(subprocess.check_output(base+['--s31-pie'],text=True))
-                assert '-DMETALIO_PIE_PIXELS=ON' in plan['command']
-                assert '-DMETALIO_LOCAL_LATENCY=OFF' in plan['command']
-                plan=json.loads(subprocess.check_output(base+['--s31-text-ripple'],text=True))
-                assert '-DMETALIO_TEXT_RIPPLE_EXPERIMENT=ON' in plan['command']
-                assert '-DMETALIO_LOCAL_LATENCY=OFF' in plan['command']
-            else:
-                result=subprocess.run(base+['--s31-shelf37'],capture_output=True,text=True)
-                assert result.returncode and '--s31-shelf37 requires metalio47 or all' in result.stderr
-                rejected=subprocess.run(base+['--s31-transfer-startup-test'],capture_output=True,text=True)
-                assert rejected.returncode!=0 and 'requires metalio47 or all' in rejected.stderr
-                rejected=subprocess.run(base+['--s31-pie'],capture_output=True,text=True)
-                assert rejected.returncode!=0 and 'requires metalio47 or all' in rejected.stderr
-                rejected=subprocess.run(base+['--s31-text-ripple'],capture_output=True,text=True)
-                assert rejected.returncode!=0 and 'requires metalio47 or all' in rejected.stderr
+            assert '-DPICO_MAIN_CLEAN_EXPERIMENT=OFF' in plan['command']
+            assert not any('METALIO' in flag for flag in plan['command'])
+            enabled=json.loads(subprocess.check_output(base+['--pico-main-clean'],text=True))
+            assert '-DPICO_MAIN_CLEAN_EXPERIMENT=ON' in enabled['command']
+            for flag in ('--s31-pie', '--s31-shelf37', '--s31-transfer-startup-test'):
+                assert subprocess.run(base+[flag],capture_output=True).returncode
 
 
 def real_build_tests(work):
     for board in BOARDS:
-        other = BOARDS[1 - BOARDS.index(board)]
         info = metadata(board)
         build = work / board / 'build'
         image = (build / (info['project'] + '.bin')).read_bytes()
         check_image(image, board)
-        reject(lambda: check_image(image, other))
+        reject(lambda: check_image(image, 'metalio47'))
         corrupt = bytearray(image)
-        struct.pack_into('<H', corrupt, 12, metadata(other)['image_chip_id'])
+        struct.pack_into('<H', corrupt, 12, 32)
         reject(lambda: check_image(corrupt, board))
         commands = json.loads((build / 'compile_commands.json').read_text())
         paths = [entry['file'] for entry in commands]
-        assert any(f'/boards/{board}/src/main/app_main.c' in path for path in paths)
-        assert not any(f'/boards/{other}/src/' in path for path in paths)
+        assert any('/source/main/app_main.c' in path for path in paths)
+        assert not any('/boards/metalio47/' in path or '/boards/pico/src/' in path for path in paths)
         has_hpm = any(path.endswith('/read_pico_flash_hpm.c') for path in paths)
         has_metalio = any('/components/metalio_hw/' in path for path in paths)
-        assert has_hpm == (board == 'pico')
-        assert has_metalio == (board == 'metalio47')
+        assert has_hpm
+        assert not has_metalio
         for entry in commands:
             if '/main/apps/app_book.c' in entry['file']:
-                assert f'-DKIIKO_BOARD_METALIO47={int(board == "metalio47")}' in entry['command']
+                assert 'KIIKO_BOARD_METALIO47' not in entry['command']
         with tempfile.TemporaryDirectory(prefix='kiiko-package-test-') as directory:
             package = Path(directory) / board
             result = export(build, package, board)
@@ -195,7 +162,7 @@ def real_build_tests(work):
                 data = (package / part['path']).read_bytes()
                 assert len(data) == part['size']
                 assert hashlib.sha256(data).hexdigest() == part['sha256']
-            assert ('--no-stub' in (package / 'flash-command.txt').read_text()) == (board == 'metalio47')
+            assert '--no-stub' not in (package / 'flash-command.txt').read_text()
             archive = package.parent / f"kiikoread-{board}-{info['version']}-USB.zip"
             with zipfile.ZipFile(archive) as zipped:
                 assert json.loads(zipped.read('verification.json')) == json.loads(json.dumps(result))
@@ -206,7 +173,7 @@ def real_build_tests(work):
             for name in [info['project'] + '.bin', 'bootloader', 'partition_table', 'ota_data_initial.bin']:
                 os.symlink(build / name, fake / name)
             plan = json.loads((build / 'flasher_args.json').read_text())
-            plan['bootloader']['offset'] = hex(metadata(other)['bootloader_offset'])
+            plan['bootloader']['offset'] = '0x2000'
             (fake / 'flasher_args.json').write_text(json.dumps(plan))
             reject(lambda: export(fake, Path(directory) / 'invalid', board))
 
@@ -221,4 +188,4 @@ if __name__ == '__main__':
     if args.build_root:
         real_build_tests(args.build_root.resolve())
     print('PASS: board identities, CMake component scopes and source selection' +
-          ('; both real images, driver isolation, cross-board rejection, flash offsets and ZIP hashes' if args.build_root else ''))
+          ('; real Pico image, rejected S31 target, flash offsets and ZIP hashes' if args.build_root else ''))

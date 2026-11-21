@@ -3,7 +3,7 @@
  * English: Retain previous/future pages around the reader; reuse buffers or draw synchronously on pressure.
  */
 #include "reader_page_cache.h"
-#include "metalio_memory.h"
+#include "cache_memory.h"
 #include <stdlib.h>
 #include <string.h>
 #define FRAME_SLOTS 4
@@ -38,8 +38,8 @@ uint8_t *reader_page_cache_begin(size_t page,uint32_t generation,size_t bytes,si
     if(!chosen)return NULL;
     if(chosen->bytes!=bytes){free(chosen->pixels);memset(chosen,0,sizeof(*chosen));}
     if(!chosen->pixels){
-        if(!metalio_cache_can_grow(bytes))return NULL;
-        chosen->pixels=heap_caps_malloc(bytes,METALIO_PSRAM);
+        if(!cache_memory_can_grow(bytes))return NULL;
+        chosen->pixels=heap_caps_malloc(bytes,CACHE_PSRAM);
         if(!chosen->pixels)return NULL;
     }
     *chosen=(frame_t){chosen->pixels,page,bytes,generation,false,true};

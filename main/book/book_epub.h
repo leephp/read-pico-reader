@@ -79,13 +79,6 @@ esp_err_t book_epub_metadata_cached_for_file(const char *path, uint64_t size, in
 /// PNG先读32字节，JPEG按需扩头；SVG/晚帧头保留有界完整回退。
 /// Probe PNG with32 bytes and grow JPEG headers on demand; retain bounded full fallback for SVG/late frames.
 esp_err_t book_epub_image_dimensions(book_epub_t *book, size_t chapter, const char *src, unsigned *width, unsigned *height);
-#if KIIKO_BOARD_METALIO47
-
-esp_err_t book_epub_suspend_io(book_epub_t *book);
-esp_err_t book_epub_resume_io(book_epub_t *book);
-int book_epub_prefetch_step(book_epub_t *book,size_t chapter);
-#else
-#endif
 
 /// 只读与文件身份匹配的已有索引；未知/过期/损坏返回0，不打开或解析书籍。
 /// Read an identity-matching existing index only; unknown/stale/corrupt returns zero without parsing a book.

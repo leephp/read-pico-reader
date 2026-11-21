@@ -6,7 +6,7 @@ import subprocess,tempfile
 from home_cover_cache_host_test import function
 ROOT=Path(__file__).resolve().parents[1]
 ticket=ROOT/'main/book/book_ticket.c'
-pico_ticket=ROOT/'boards/pico/src/main/book/book_ticket.c'
+pico_ticket=ROOT/'main/book/book_ticket.c'
 unit=r'''
 #include <assert.h>
 #include <stdbool.h>

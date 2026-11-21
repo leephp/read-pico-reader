@@ -80,7 +80,7 @@ static bool capture;
 static uint8_t actual[192*192];
 void epd_draw_pixel(int x,int y,uint8_t color,uint8_t *fb){(void)fb;painted++;if(capture){assert(x>=0&&x<192&&y>=0&&y<192);assert(color==0);actual[y*192+x]=1;}}
 int main(void){
- uint8_t record[77],fb=0;
+ uint8_t record[77],fb[192*192/2];
  fail=1;assert(!ui_hanzi_get(TEST_CP,record));fail=0;
  assert(ui_hanzi_get(TEST_CP,record));assert(!ui_hanzi_get(0x10ffff,record));
  static const uint16_t cps[]={CPS};
@@ -88,12 +88,12 @@ int main(void){
   assert(ui_hanzi_has(cps[i])&&ui_hanzi_get(cps[i],record));
   char utf[4]={0xe0|(cps[i]>>12),0x80|((cps[i]>>6)&63),0x80|(cps[i]&63),0};assert(ui_font_has_text(utf));
   if(i%487==0)for(int px=18;px<=64;px+=7){int top,bottom;ui_font_measure_line_px(px,utf,&top,&bottom);assert(top>0&&bottom>=0);assert(ui_font_text_width_px(px,utf)>0);
-   painted=0;ui_font_draw_text_px(&fb,100,100,px,utf,EPD_DRAW_ALIGN_LEFT,0,15,false);assert(painted>0);
-   assert(ui_font_title_px(px,utf)==24);memset(actual,0,sizeof(actual));capture=true;
-   ui_font_draw_title_px(&fb,100,100,px,utf,EPD_DRAW_ALIGN_LEFT);capture=false;
+   painted=0;memset(fb,255,sizeof(fb));ui_font_draw_text_px(fb,100,100,px,utf,EPD_DRAW_ALIGN_LEFT,0,15,false);bool ink=false;for(size_t n=0;n<sizeof(fb);++n)ink|=fb[n]!=255;assert(ink);
+   assert(ui_font_title_px(px,utf)==24);memset(actual,0,sizeof(actual));memset(fb,255,sizeof(fb));capture=true;
+   ui_font_draw_title_px(fb,100,100,px,utf,EPD_DRAW_ALIGN_LEFT);capture=false;
    for(int y=0;y<192;++y)for(int x=0;x<192;++x){int xx=x-100-(int8_t)record[0],yy=y-100-(int8_t)record[1];
     unsigned expected=0;if(xx>=0&&yy>=0&&xx<record[2]&&yy<record[3]){unsigned bit=yy*24+xx;expected=(record[5+bit/8]>>(bit&7))&1u;}
-    assert(actual[y*192+x]==expected);}}
+    assert((((fb[y*96+x/2]>>((x%2)*4))&15)==0)==(bool)expected);}}
  }
  static const uint32_t hashes[]={HASHES};job_t jobs[3]={0};pthread_t threads[3];
  for(unsigned lane=0;lane<3;++lane){jobs[lane].cps=cps;jobs[lane].hashes=hashes;jobs[lane].count=sizeof(cps)/sizeof(cps[0]);jobs[lane].lane=lane;assert(!pthread_create(&threads[lane],NULL,decode_lane,&jobs[lane]));}
@@ -102,6 +102,7 @@ int main(void){
  puts("Han supplement: PASS (actual decoder/cache, common glyphs, rendering, OOM and metrics)");
 }
 '''.replace('TEST_CP',str(chars[0])).replace('CPS',','.join(map(str,chars))).replace('HASHES',','.join(str(zlib.crc32(raw_records[i]))+'u' for i in range(count)))
+ unit += '\nint epd_width(void){return 192;}\nint epd_height(void){return 192;}\nenum EpdRotation epd_get_rotation(void){return EPD_ROT_LANDSCAPE;}\n'
  (work/'test.c').write_text(unit)
  subprocess.run(['cc','-std=gnu11','-Wall','-Wextra','-Werror','-Wno-unused-function','-fsanitize=address,undefined','-pthread','-I'+str(work),'-I'+str(ROOT/'main/font'),'-I'+str(ROOT/'tools/ui_gesture_stubs'),str(work/'test.c'),str(work/'assets.c'),str(ROOT/'main/font/ui_font.c'),str(ROOT/'main/font/ui_hanzi.c'),'-lz','-o',str(work/'test')],check=True)
  subprocess.run([str(work/'test')],check=True)

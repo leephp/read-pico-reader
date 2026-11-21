@@ -1,12 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "book_cover.h"
-#include "metalio_cover_cache.h"
-#if KIIKO_BOARD_METALIO47
-#ifdef ESP_PLATFORM
-#include "metalio_jpeg.h"
-#endif
-#else
-#endif
+#include "cover_ram_cache.h"
 #include "book_cover_auto.h"
 #include "book_epub.h"
 #include "book_title.h"
@@ -23,12 +17,9 @@
 #include "esp_log.h"
 #endif
 #include "read_pico_webp.h"
-#if KIIKO_BOARD_METALIO47
-#else
 #if defined(ESP_PLATFORM) || defined(KIIKO_LOWZAG_HOST_TEST)
 #include "lowzag.h"
 #define KIIKO_USE_LOWZAG 1
-#endif
 #endif
 #include "jpeg_decoder.h"
 #include "JPEGDEC.h"
@@ -517,18 +508,6 @@ static bool jpeg_gray(const uint8_t *data, size_t size, unsigned out_width,
     uint8_t sof = 0;
     unsigned frame_width = 0, frame_height = 0;
     const bool have_frame = book_jpeg_frame(data, size, &sof, &frame_width, &frame_height);
-#if KIIKO_BOARD_METALIO47
-#ifdef ESP_PLATFORM
-    if(metalio_jpeg_gray(data,size,NULL,out_width,out_height,out))return true;
-    // 用户2026-11-05：S31 大尺寸/渐进式封面在内存紧时会让整幅解码失败；先让 JPEGDEC 直接解
-    // 1/2..1/8 小平面兜底（占地远小于整幅系数/位图），再考虑其它解码器。
-    // User2026-11-05: oversized/progressive S31 covers can exhaust the full-frame decoder; try
-    // JPEGDEC's 1/2..1/8 plane first, which needs far less memory than coefficients or a bitmap.
-    if (have_frame && jpegdec_gray_fallback(data, size, frame_width, frame_height,
-                                           out_width, out_height, out)) return true;
-    if(!metalio_jpeg_fallback_allowed())return false;
-#endif
-#endif
     if (have_frame && sof == 0xC2) {
 #ifdef KIIKO_USE_LOWZAG
         if(lowzag_gray(data,size,out_width,out_height,out))return true;
@@ -962,8 +941,8 @@ static bool cover_cache_key(const char *source, const char *title, const char *a
                     (unsigned long long)header->path_hash, BOOK_COVER_W, BOOK_COVER_H) < (int)cap;
 }
 
-static metalio_cover_key_t ram_key(const cover_cache_header_t *key,uint64_t variant) {
-    return (metalio_cover_key_t){.field={key->path_hash,key->text_hash,key->file_size,
+static cover_ram_key_t ram_key(const cover_cache_header_t *key,uint64_t variant) {
+    return (cover_ram_key_t){.field={key->path_hash,key->text_hash,key->file_size,
         (uint64_t)key->modified,variant,key->template_version,key->schema,0}};
 }
 // 用户2026-11-05：封面缓存迁到 TF:/kiikoread/covers；新路径未生成时回退读旧根，
@@ -979,11 +958,7 @@ static bool cover_cache_read(const char *path, const cover_cache_header_t *expec
         const char *name = strrchr(path, '/');
         char legacy[160];
         if (name &&
-#if KIIKO_BOARD_METALIO47
-            snprintf(legacy, sizeof(legacy), "/sdcard/.metalio_s31/covers/%s", name + 1) < (int)sizeof(legacy)
-#else
             snprintf(legacy, sizeof(legacy), "/sdcard/.readpico/covers/%s", name + 1) < (int)sizeof(legacy)
-#endif
         ) file = fopen(legacy, "rb");
     }
     if (!file) return false;
@@ -1031,11 +1006,11 @@ static bool book_cover_load_gray_impl(const char *path, const char *title, const
     cover_cache_header_t key;
     bool cacheable = cover_cache_key(path, title, author, cache_path, sizeof(cache_path), &key);
     if (!cacheable) return false;
-    const metalio_cover_key_t ram=ram_key(&key,0);
-    metalio_cover_meta_t meta={BOOK_COVER_W,BOOK_COVER_H,false};
-    if(metalio_cover_cache_get(&ram,out,BOOK_COVER_W*BOOK_COVER_H,NULL)) return true;
+    const cover_ram_key_t ram=ram_key(&key,0);
+    cover_ram_meta_t meta={BOOK_COVER_W,BOOK_COVER_H,false};
+    if(cover_ram_cache_get(&ram,out,BOOK_COVER_W*BOOK_COVER_H,NULL)) return true;
     if (cover_cache_read(cache_path, &key, out)) {
-        metalio_cover_cache_put(&ram,out,BOOK_COVER_W*BOOK_COVER_H,meta); return true;
+        cover_ram_cache_put(&ram,out,BOOK_COVER_W*BOOK_COVER_H,meta); return true;
     }
     if (!allow_decode) { if (pending) *pending = true; return false; }
 
@@ -1078,7 +1053,7 @@ static bool book_cover_load_gray_impl(const char *path, const char *title, const
     // Persist real covers here; the cover queue caches generated TXT rasters in RAM per face.
     if (good && cache_result && !auto_used) {
         cover_cache_write(cache_path, &key, out);
-        metalio_cover_cache_put(&ram,out,BOOK_COVER_W*BOOK_COVER_H,meta);
+        cover_ram_cache_put(&ram,out,BOOK_COVER_W*BOOK_COVER_H,meta);
     }
     return good;
 }
@@ -1117,9 +1092,9 @@ static bool book_cover_load_list_gray_sized_impl(const char *path, const char *t
     if (!title || !*title) return false;
     cover_cache_header_t key;
     if (!cover_cache_key(path, title, author, cache_path, sizeof(cache_path), &key)) return false;
-    metalio_cover_key_t ram=ram_key(&key,1);if(compact)ram.field[7]=((uint64_t)limit_w<<32)|limit_h;
-    metalio_cover_meta_t meta;
-    if(metalio_cover_cache_get(&ram,out,(size_t)limit_w*limit_h,&meta)) {
+    cover_ram_key_t ram=ram_key(&key,1);if(compact)ram.field[7]=((uint64_t)limit_w<<32)|limit_h;
+    cover_ram_meta_t meta;
+    if(cover_ram_cache_get(&ram,out,(size_t)limit_w*limit_h,&meta)) {
         *width=meta.width; *height=meta.height; return true;
     }
     if(!list_cache_path(cache_path,sizeof(cache_path),limit_w,limit_h))return false;
@@ -1130,11 +1105,7 @@ static bool book_cover_load_list_gray_sized_impl(const char *path, const char *t
         const char *name = strrchr(cache_path, '/');
         char legacy[160];
         if (name &&
-#if KIIKO_BOARD_METALIO47
-            snprintf(legacy, sizeof(legacy), "/sdcard/.metalio_s31/covers/%s", name + 1) < (int)sizeof(legacy)
-#else
             snprintf(legacy, sizeof(legacy), "/sdcard/.readpico/covers/%s", name + 1) < (int)sizeof(legacy)
-#endif
         ) file = fopen(legacy, "rb");
     }
     if (file) {
@@ -1152,7 +1123,7 @@ static bool book_cover_load_list_gray_sized_impl(const char *path, const char *t
         fclose(file);
         if (good) {
             *width = found.width; *height = found.height;
-            metalio_cover_cache_put(&ram,out,bytes,(metalio_cover_meta_t){*width,*height,false});
+            cover_ram_cache_put(&ram,out,bytes,(cover_ram_meta_t){*width,*height,false});
             return true;
         }
     }
@@ -1204,7 +1175,7 @@ static bool book_cover_load_list_gray_sized_impl(const char *path, const char *t
     // 默认封面不写盘，避免把“解码失败”固化成真封面缓存。
     // Never persist a default cover, so a transient decode failure cannot become the real cache.
     if (good && cacheable && !auto_used) {
-        metalio_cover_cache_put(&ram,out,(size_t)*width * *height,(metalio_cover_meta_t){*width,*height,false});
+        cover_ram_cache_put(&ram,out,(size_t)*width * *height,(cover_ram_meta_t){*width,*height,false});
         // 有效尺寸和像素一起原子落盘；最多一张小图，无整页解码工作区。
         // Persist dimensions and pixels atomically; one small image, never a whole-page decode workspace.
         key.width = *width; key.height = *height;
@@ -1232,45 +1203,6 @@ static bool book_cover_load_list_gray_impl(const char *path,const char *title,co
 #pragma GCC pop_options
 #endif
 
-#if KIIKO_BOARD_METALIO47
-
-
-// 快刷缩略图的键包含尺寸、对比度与点阵相位。/ Fast raster keys include size, contrast and dither phase.
-static bool fast_ram_key(const char *path,const char *title,const char *author,unsigned style,
-                          unsigned width,unsigned height,unsigned contrast,unsigned phase,metalio_cover_key_t *out) {
-    char canonical[256],disk[120]; cover_cache_header_t key;
-    if(book_title_from_path(path,canonical,sizeof(canonical))) title=canonical;
-    if(!title || !*title || !cover_cache_key(path,title,author,disk,sizeof(disk),&key)) return false;
-    *out=ram_key(&key,2);
-    out->field[6]=((uint64_t)style<<32)|((uint64_t)width<<16)|height;
-    out->field[7]=((uint64_t)contrast<<32)|phase;
-    return true;
-}
-bool book_cover_fast_cache_get(const char *path,const char *title,const char *author,unsigned style,
-                               unsigned width,unsigned height,unsigned contrast,unsigned phase,
-                               uint8_t *bits,size_t bytes,bool *white_edge) {
-    metalio_cover_key_t key; metalio_cover_meta_t meta;
-    if(!fast_ram_key(path,title,author,style,width,height,contrast,phase,&key) ||
-       !metalio_cover_cache_get(&key,bits,bytes,&meta)) return false;
-    *white_edge=meta.white_edge; return true;
-}
-void book_cover_fast_cache_put(const char *path,const char *title,const char *author,unsigned style,
-                               unsigned width,unsigned height,unsigned contrast,unsigned phase,
-                               const uint8_t *bits,size_t bytes,bool white_edge) {
-    metalio_cover_key_t key;
-    if(fast_ram_key(path,title,author,style,width,height,contrast,phase,&key))
-        metalio_cover_cache_put(&key,bits,bytes,(metalio_cover_meta_t){width,height,white_edge});
-}
-bool book_cover_prefetch_cached(const char *path,const char *title,const char *author,bool list) {
-    uint8_t *scratch=heap_caps_malloc(BOOK_COVER_W*BOOK_COVER_H,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
-    if(!scratch) return false;
-    bool pending=false; unsigned w,h;
-    // 只读已生成封面；不在前台空闲轮询里解包大EPUB。/ Idle prefetch never decompresses cold EPUBs.
-    bool ok=list?book_cover_load_list_gray(path,title,author,scratch,false,&pending,&w,&h):
-                 book_cover_load_gray(path,title,author,scratch,false,&pending);
-    free(scratch); return ok;
-}
-#endif
 
 /* ---- 已处理的黑白点阵落卡 / Persistent finished monochrome raster ---- */
 // 更改封面点阵算法时递增此版本；首页与书架各保留一个快刷结果，不按相位累积文件。
@@ -1303,8 +1235,8 @@ static bool fast_cover_key(const char *source, const char *title, const char *au
     header->stride = key.stride; header->contrast = key.contrast; header->phase = key.phase;
     return true;
 }
-static metalio_cover_key_t finished_fast_ram_key(const fast_cover_header_t *header) {
-    metalio_cover_key_t key = ram_key(&header->source, 3);
+static cover_ram_key_t finished_fast_ram_key(const fast_cover_header_t *header) {
+    cover_ram_key_t key = ram_key(&header->source, 3);
     key.field[6] = ((uint64_t)header->revision << 48) | ((uint64_t)header->stride << 32) |
         ((uint64_t)header->width << 16) | header->height;
     key.field[7] = ((uint64_t)header->contrast << 32) | header->phase;
@@ -1321,12 +1253,12 @@ static cover_cache_header_t shelf_cover_identity(const char *source, const char 
 bool book_cover_shelf_no_artwork(const char *source, const char *title, const char *author,
         uint64_t size, int64_t modified, bool remember) {
     cover_cache_header_t header = shelf_cover_identity(source, title, author, size, modified);
-    metalio_cover_key_t key = ram_key(&header, 5);
+    cover_ram_key_t key = ram_key(&header, 5);
     uint8_t marker = 1;
-    return remember ? metalio_cover_cache_put(&key, &marker, sizeof(marker), (metalio_cover_meta_t){0})
-                    : metalio_cover_cache_get(&key, &marker, sizeof(marker), NULL);
+    return remember ? cover_ram_cache_put(&key, &marker, sizeof(marker), (cover_ram_meta_t){0})
+                    : cover_ram_cache_get(&key, &marker, sizeof(marker), NULL);
 }
-static metalio_cover_key_t shelf_cover_raster_key(const char *source, const char *title,
+static cover_ram_key_t shelf_cover_raster_key(const char *source, const char *title,
         const char *author, uint64_t size, int64_t modified, uint64_t font_key, bool list, bool fast,
         book_fast_cover_key_t raster) {
     char canonical[256];
@@ -1341,73 +1273,40 @@ static metalio_cover_key_t shelf_cover_raster_key(const char *source, const char
         };
         return finished_fast_ram_key(&packed);
     }
-    metalio_cover_key_t key = ram_key(&header, list ? 1 : 0);
+    cover_ram_key_t key = ram_key(&header, list ? 1 : 0);
     if (list) key.field[7] = ((uint64_t)raster.width << 32) | raster.height;
     return key;
 }
 
 bool book_cover_shelf_ram_read(const char *source, const char *title, const char *author,
         uint64_t size, int64_t modified, bool list, bool fast, book_fast_cover_key_t raster,
-        void *out, size_t capacity, metalio_cover_meta_t *meta) {
-    metalio_cover_key_t key = shelf_cover_raster_key(source, title, author, size, modified, book_auto_cover_font_key(), list, fast, raster);
-    return metalio_cover_cache_get(&key, out, capacity, meta);
+        void *out, size_t capacity, cover_ram_meta_t *meta) {
+    cover_ram_key_t key = shelf_cover_raster_key(source, title, author, size, modified, book_auto_cover_font_key(), list, fast, raster);
+    return cover_ram_cache_get(&key, out, capacity, meta);
 }
 
 void book_cover_shelf_ram_store(const char *source, const char *title, const char *author,
         uint64_t size, int64_t modified, uint64_t font_key, bool list, bool fast, book_fast_cover_key_t raster,
         const uint8_t *pixels, bool white_edge) {
-    metalio_cover_key_t key = shelf_cover_raster_key(source, title, author, size, modified, font_key, list, fast, raster);
+    cover_ram_key_t key = shelf_cover_raster_key(source, title, author, size, modified, font_key, list, fast, raster);
     const size_t bytes = (size_t)(fast ? raster.stride : raster.width) * raster.height;
-    (void)metalio_cover_cache_put(&key, pixels, bytes,
-        (metalio_cover_meta_t){raster.width, raster.height, white_edge});
+    (void)cover_ram_cache_put(&key, pixels, bytes,
+        (cover_ram_meta_t){raster.width, raster.height, white_edge});
 }
-#if KIIKO_BOARD_METALIO47
-bool book_cover_peek_gray(const char *source,const char *title,const char *author,bool list,
-                         uint8_t *out,unsigned *width,unsigned *height) {
-    if(!source||!title||!out||!width||!height)return false;
-    char canonical[256],disk[120];cover_cache_header_t header;
-    if(book_title_from_path(source,canonical,sizeof(canonical)))title=canonical;
-    if(!cover_cache_key(source,title,author,disk,sizeof(disk),&header))return false;
-    metalio_cover_key_t key=ram_key(&header,list?1:0);metalio_cover_meta_t meta;
-    if(!metalio_cover_cache_get(&key,out,BOOK_COVER_W*BOOK_COVER_H,&meta))return false;
-    *width=meta.width;*height=meta.height;return true;
-}
-bool book_cover_fast_cache_peek(const char *source,const char *title,const char *author,
-                               book_fast_cover_key_t key,uint8_t *out,bool *white_edge) {
-    char path[120];fast_cover_header_t header;metalio_cover_meta_t meta;
-    if(!out||!white_edge||!fast_cover_key(source,title,author,key,path,&header))return false;
-    metalio_cover_key_t ram=finished_fast_ram_key(&header);
-    if(!metalio_cover_cache_get(&ram,out,(size_t)key.stride*key.height,&meta))return false;
-    *white_edge=meta.white_edge;return true;
-}
-bool book_cover_prefetch_fast_cached(const char *source,const char *title,const char *author,
-                                    book_fast_cover_key_t key) {
-    if(!key.stride||!key.height||key.height>BOOK_COVER_H||key.stride>BOOK_COVER_W)return false;
-    uint8_t *pixels=heap_caps_malloc((size_t)key.stride*key.height,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
-    if(!pixels)return false;
-    bool edge=false,ok=book_cover_fast_cache_read(source,title,author,key,pixels,&edge);
-    free(pixels);return ok;
-}
-#else
-#endif
 bool book_cover_fast_cache_read(const char *source, const char *title, const char *author,
                                 book_fast_cover_key_t key, uint8_t *out, bool *white_edge) {
     char path[120]; fast_cover_header_t expected, found;
     if (!out || !white_edge || !fast_cover_key(source, title, author, key, path, &expected)) return false;
     const size_t bytes = (size_t)key.stride * key.height;
-    metalio_cover_key_t ram = finished_fast_ram_key(&expected);
-    metalio_cover_meta_t meta;
-    if (metalio_cover_cache_get(&ram, out, bytes, &meta)) { *white_edge = meta.white_edge; return true; }
+    cover_ram_key_t ram = finished_fast_ram_key(&expected);
+    cover_ram_meta_t meta;
+    if (cover_ram_cache_get(&ram, out, bytes, &meta)) { *white_edge = meta.white_edge; return true; }
     FILE *file = fopen(path, "rb");
     if (!file) {
         const char *name = strrchr(path, '/');
         char legacy[160];
         if (name &&
-#if KIIKO_BOARD_METALIO47
-            snprintf(legacy, sizeof(legacy), "/sdcard/.metalio_s31/covers/%s", name + 1) < (int)sizeof(legacy)
-#else
             snprintf(legacy, sizeof(legacy), "/sdcard/.readpico/covers/%s", name + 1) < (int)sizeof(legacy)
-#endif
         ) file = fopen(legacy, "rb");
     }
     if (!file) return false;
@@ -1423,8 +1322,8 @@ bool book_cover_fast_cache_read(const char *source, const char *title, const cha
     fclose(file);
     if (ok) {
         *white_edge = found.white_edge != 0;
-        (void)metalio_cover_cache_put(&ram, out, bytes,
-            (metalio_cover_meta_t){key.width, key.height, *white_edge});
+        (void)cover_ram_cache_put(&ram, out, bytes,
+            (cover_ram_meta_t){key.width, key.height, *white_edge});
     }
     return ok;
 }
@@ -1433,9 +1332,9 @@ static void fast_cache_write(const char *source,const char *title,const char *au
     char path[120], temp[128]; fast_cover_header_t header;
     if (!out || !fast_cover_key(source, title, author, key, path, &header)) return;
     if(size>=0&&(header.source.file_size!=(uint64_t)size||header.source.modified!=modified))return;
-    metalio_cover_key_t ram = finished_fast_ram_key(&header);
-    (void)metalio_cover_cache_put(&ram, out, (size_t)key.stride * key.height,
-        (metalio_cover_meta_t){key.width, key.height, white_edge});
+    cover_ram_key_t ram = finished_fast_ram_key(&header);
+    (void)cover_ram_cache_put(&ram, out, (size_t)key.stride * key.height,
+        (cover_ram_meta_t){key.width, key.height, white_edge});
     if ((mkdir("/sdcard/.kiikoread", 0777) && errno != EEXIST) ||
         (mkdir("/sdcard/.kiikoread/covers", 0777) && errno != EEXIST)) return;
     if (snprintf(temp, sizeof(temp), "%s.tmp", path) >= (int)sizeof(temp)) return;
@@ -1588,15 +1487,6 @@ bool book_image_file_grayscale(const char *path, bool png, unsigned width, unsig
     } else if(!fseek(file,0,SEEK_SET)) {
         if (png) ok = png_gray_input(NULL, (size_t)st.st_size, file, width, height, out, NULL);
         else {
-#if KIIKO_BOARD_METALIO47
-#ifdef ESP_PLATFORM
-            ok=metalio_jpeg_gray(NULL,(size_t)st.st_size,file,width,height,out);
-            if(ok){fclose(file);return true;}
-            if(!metalio_jpeg_fallback_allowed()){fclose(file);return false;}
-            clearerr(file);
-            if(fseek(file,0,SEEK_SET)){fclose(file);return false;}
-#endif
-#endif
             uint8_t sof = 0;
             unsigned source_w = 0, source_h = 0;
             if (file_frame(file, false, &sof, &source_w, &source_h) && !fseek(file, 0, SEEK_SET)) {
@@ -1796,10 +1686,6 @@ void book_cover_store_sized(const char *path,const char *title,const char *autho
     if(!cover_cache_key(path,title,author,cache,sizeof(cache),&key)||key.file_size!=(uint64_t)size||key.modified!=modified||
        !list_cache_path(cache,sizeof(cache),width,height))return;
     key.width=width;key.height=height;size_t bytes=(size_t)width*height;
-#if KIIKO_BOARD_METALIO47
-    metalio_cover_key_t ram=ram_key(&key,1);ram.field[7]=((uint64_t)width<<32)|height;
-    metalio_cover_cache_put(&ram,pixels,bytes,(metalio_cover_meta_t){width,height,false});
-#endif
     if ((mkdir("/sdcard/.kiikoread", 0777) && errno != EEXIST) ||
         (mkdir("/sdcard/.kiikoread/covers", 0777) && errno != EEXIST)) return;
     if(snprintf(temp,sizeof(temp),"%s.tmp",cache)>=(int)sizeof(temp))return;

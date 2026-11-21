@@ -155,11 +155,6 @@ static bool cancelled(void) {
 static bool save_record(const char *path, const struct stat *expected, const book_name_t *name,
                         const uint8_t *pixels) {
     if (cancelled() || !read_pico_sd_io_ready()) return false;
-#if KIIKO_BOARD_METALIO47
-    read_pico_sd_access_scope_t access __attribute__((cleanup(read_pico_sd_access_scope_end))) =
-        read_pico_sd_access_scope(COVER_DIRECTORY);
-    if (!access.allowed) return false;
-#endif
     struct stat st;
     if (!identity(path, &st) || st.st_size != expected->st_size || st.st_mtime != expected->st_mtime)
         return false;
@@ -925,8 +920,7 @@ static esp_err_t download_cover(const match_t *match, http_response_t *response,
 static bool cover_network_ready(void) {
     read_pico_transfer_status_t status;
     read_pico_transfer_get_status(&status);
-    return status.network_ready && status.mode == READ_PICO_TRANSFER_MODE_STA &&
-           (!KIIKO_BOARD_METALIO47 || status.cover_lookup);
+    return status.network_ready && status.mode == READ_PICO_TRANSFER_MODE_STA;
 }
 
 static esp_err_t save_downloaded_cover(const char *path, const struct stat *file, const match_t *match,

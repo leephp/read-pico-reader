@@ -82,12 +82,10 @@ bool app_settings_set_book_heading_size(unsigned percent) {
 }
 
 static void reader_controls_normalize(reader_controls_config_t *c) {
-    reader_controls_config_t d=reader_controls_defaults(KIIKO_BOARD_METALIO47);
+    reader_controls_config_t d=reader_controls_defaults();
     for(unsigned i=0;i<RC_SLOT_COUNT;++i)
-        if(!reader_controls_action_allowed(c->actions[i],KIIKO_BOARD_METALIO47))c->actions[i]=d.actions[i];
-#if !KIIKO_BOARD_METALIO47
+        if(!reader_controls_action_allowed(c->actions[i]))c->actions[i]=d.actions[i];
     for(unsigned i=0;i<2;++i)if(c->sides[i]==RC_SIDE_BRIGHTNESS||c->sides[i]==RC_SIDE_WARMTH)c->sides[i]=RC_SIDE_OFF;
-#endif
     // 中文：兼容旧版0秒及较长间隔，保留通过校验的手势绑定。
     // English: Migrate legacy zero and long intervals while retaining validated gesture bindings.
     const unsigned seconds = reader_controls_seconds(c);
@@ -100,7 +98,7 @@ static void reader_controls_normalize(reader_controls_config_t *c) {
 }
 const reader_controls_config_t *app_settings_reader_controls(void) {
     if(!s_reader_controls_loaded){
-        s_reader_controls=reader_controls_defaults(KIIKO_BOARD_METALIO47);
+        s_reader_controls=reader_controls_defaults();
         nvs_handle_t h;
         if(nvs_open(NVS_NS,NVS_READONLY,&h)==ESP_OK){
             reader_controls_config_t saved;size_t bytes=sizeof(saved);
@@ -120,14 +118,12 @@ static bool reader_controls_save(reader_controls_config_t *c) {
     return e==ESP_OK;
 }
 bool app_settings_set_reader_control(unsigned slot,unsigned action) {
-    if(slot>=RC_SLOT_COUNT||!reader_controls_action_allowed(action,KIIKO_BOARD_METALIO47))return false;
+    if(slot>=RC_SLOT_COUNT||!reader_controls_action_allowed(action))return false;
     reader_controls_config_t c=*app_settings_reader_controls();c.actions[slot]=(uint8_t)action;return reader_controls_save(&c);
 }
 bool app_settings_set_reader_side(unsigned side,unsigned action) {
     if(side>=2||action>=RC_SIDE_COUNT)return false;
-#if !KIIKO_BOARD_METALIO47
     if(action==RC_SIDE_BRIGHTNESS||action==RC_SIDE_WARMTH)return false;
-#endif
     reader_controls_config_t c=*app_settings_reader_controls();c.sides[side]=(uint8_t)action;return reader_controls_save(&c);
 }
 bool app_settings_set_reader_auto_seconds(unsigned seconds) {

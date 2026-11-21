@@ -13,7 +13,7 @@ def main():
  from fontTools.ttLib import TTFont
  from fontTools.subset import Options,Subsetter
  from fontTools.varLib.instancer import instantiateVariableFont
- p=argparse.ArgumentParser();p.add_argument('--src',type=Path,required=True);p.add_argument('--extra',type=Path,default=ROOT/'main/font/reader_extra_outlines.txt');p.add_argument('--out',type=Path,default=ROOT/'boards/pico/src/main/assets/builtin.ttf');a=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('--src',type=Path,required=True);p.add_argument('--extra',type=Path,default=ROOT/'main/font/reader_extra_outlines.txt');p.add_argument('--out',type=Path,default=ROOT/'main/assets/builtin.ttf');a=p.parse_args()
  baseline=TTFont(ROOT/'main/assets/builtin.ttf');original=set(baseline.getBestCmap());baseline.close();extras=read_codepoints(a.extra);wanted=original|extras
  f=TTFont(a.src,recalcTimestamp=False)
  if 'fvar' in f:f=instantiateVariableFont(f,{'wght':500},inplace=True)

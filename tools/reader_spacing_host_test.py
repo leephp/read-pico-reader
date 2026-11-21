@@ -24,7 +24,8 @@ unit = r'''
 typedef struct {int x,y,width,height;} EpdRect;
 typedef struct {int unused;} app_ctx_t;
 typedef enum {APP_REDRAW_NONE,APP_REDRAW_PAGE} app_redraw_t;
-static int s_px=36,s_margin=24,s_reader_slider=-1;
+static app_redraw_t px_settle_schedule(app_ctx_t *ctx,int px){(void)ctx;(void)px;return APP_REDRAW_PAGE;}
+static int s_px=36,s_margin=24,s_reader_slider=-1,s_pending_px;
 static int s_reader_preview_px,s_reader_preview_margin,s_reader_preview_line;
 static int s_reader_preview_para,s_reader_preview_tracking;
 static bool s_reader_slider_endpoint,fail_layout;

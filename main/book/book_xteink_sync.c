@@ -713,18 +713,12 @@ static bool verify_text(const char *path, uint64_t downloaded) {
         downloaded > (uint64_t)LONG_MAX - 4) return false;
     FILE *file = fopen(path, "rb");
     if (!file) return false;
-    const size_t block = KIIKO_BOARD_METALIO47 ? BOOK_TXT_PROBE_BYTES + 1u : 4096u;
+    const size_t block = 4096u;
     uint8_t *buffer = heap_caps_malloc(block, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!buffer) { fclose(file); return false; }
     size_t length = fread(buffer, 1, block, file);
     bool valid = length > 0;
     bool utf16 = false;
-#if KIIKO_BOARD_METALIO47
-    uint32_t bom = 0;
-    const size_t sample = length < BOOK_TXT_PROBE_BYTES ? length : BOOK_TXT_PROBE_BYTES;
-    utf16 = book_txt_detect_utf16(buffer, sample, &bom) != 0;
-    if (utf16) valid = downloaded > bom && downloaded % 2 == 0;
-#endif
     uint64_t read = 0;
     while (valid && length && !s_cancel) {
         if (utf16) {

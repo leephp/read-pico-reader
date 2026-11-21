@@ -68,17 +68,6 @@ uint32_t book_chapter_byte_offset(size_t i);
 book_kind_t book_kind(void);
 
 esp_err_t book_chapter_image_dimensions(size_t chapter, const char *src, unsigned *width, unsigned *height);
-#if KIIKO_BOARD_METALIO47
-
-/// 浅睡仅暂停只读文件，不释放排版和章节索引。/ Pause read handles without discarding layout/indexes.
-esp_err_t book_suspend_io(void);
-bool book_io_pending(void);
-esp_err_t book_resume_io(void);
-/// 空闲时有界准备下一章压缩数据，不加载字体或改变当前排版。
-/// Bounded idle preparation of the next compressed chapter, without loading faces/changing layout.
-int book_chapter_prefetch_step(size_t chapter);
-#else
-#endif
 
 /// 优先读小型章节摘要，缺失时只校验已有索引并保存摘要；不解析书籍，未知返回0。
 /// Prefer tiny summaries; otherwise validate an existing index and save its count, without parsing a book; unknown returns zero.

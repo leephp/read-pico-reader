@@ -91,7 +91,7 @@ int main(void){
 '''
 
 def run(board, directory, negative=False):
-    source = (ROOT/f'boards/{board}/src/components/epdiy/src/render.c').read_text()
+    source = (ROOT/'components/epdiy/src/render.c').read_text()
     start = source.index('__attribute__((optimize("O3"))) static inline int _interlace_line_unaligned(')
     end = source.index('\nEpdRect epd_difference_image(\n', start)
     functions = source[start:end]
@@ -102,7 +102,7 @@ def run(board, directory, negative=False):
     binary = directory/board
     subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-Wno-unknown-attributes',
                     '-Wno-pointer-to-int-cast','-fsanitize=address,undefined','-I'+str(directory),
-                    str(unit),str(ROOT/'components/epdiy/src/riscv_pixels.c'),'-o',str(binary)],check=True)
+                    str(unit),str(ROOT/'tools/epd_pixels_host.c'),'-o',str(binary)],check=True)
     result = subprocess.run([str(binary)],capture_output=True,text=True)
     if negative:
         assert result.returncode != 0, 'Regression oracle did not reject the old code'
@@ -117,6 +117,6 @@ if __name__=='__main__':
     args=parser.parse_args()
     with tempfile.TemporaryDirectory() as temp:
         directory=Path(temp);(directory/'esp_attr.h').write_text('#define IRAM_ATTR\n')
-        for board in ('pico','metalio47'):
+        for board in ('pico',):
             run(board,directory)
             if args.check_regression:run(board,directory,True)

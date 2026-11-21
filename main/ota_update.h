@@ -17,11 +17,7 @@
 extern "C" {
 #endif
 
-#if KIIKO_BOARD_METALIO47
-#define PICO_OTA_UPDATE_PATH "/sdcard/Metalio-S31-update.bin"
-#else
 #define PICO_OTA_UPDATE_PATH "/sdcard/Pico-update.bin"
-#endif
 
 typedef struct {
     char current_version[33];

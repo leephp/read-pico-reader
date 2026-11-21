@@ -9,11 +9,7 @@
 #include <stdint.h>
 
 #include <esp_err.h>
-#if KIIKO_BOARD_METALIO47
-#include "esp_cpu.h"
-#else
 #include <xtensa/core-macros.h>
-#endif
 
 /**
  * State of display control pins.

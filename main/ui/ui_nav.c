@@ -25,10 +25,6 @@
 #include "ui_kit.h"
 #include "settings.h"
 #include "ui_click_feedback.h"
-#if KIIKO_BOARD_METALIO47
-#include "metalio_hw.h"
-#else
-#endif
 #include "ttf_font.h"
 #include "ui_font.h"
 
@@ -43,7 +39,7 @@
 #define UI_STATUS_SIGNATURE_PX 26
 
 // Pico's 4 MiB application slots leave little room for repeated status paint code.
-#if !KIIKO_BOARD_METALIO47 && defined(__GNUC__) && !defined(__clang__)
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC push_options
 #pragma GCC optimize("Os")
 #endif
@@ -123,7 +119,7 @@ static void status_text(uint8_t *fb, int x, int y, int px, const char *text,
         ui_text_fixed_vc(fb, x, y, px, text, align, false);
 }
 
-#if !KIIKO_BOARD_METALIO47 && defined(__GNUC__) && !defined(__clang__)
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC pop_options
 #endif
 

@@ -16,11 +16,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #ifndef BOOK_SHELF_PAGE_ROOT
-#if KIIKO_BOARD_METALIO47
-#define BOOK_SHELF_PAGE_PARENT "/sdcard/.metalio_s31"
-#else
 #define BOOK_SHELF_PAGE_PARENT "/sdcard/.readpico"
-#endif
 #define BOOK_SHELF_PAGE_ROOT BOOK_SHELF_PAGE_PARENT "/shelf-pages"
 #endif
 #ifndef BOOK_SHELF_PAGE_PARENT

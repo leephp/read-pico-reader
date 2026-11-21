@@ -40,14 +40,14 @@ static inline bool reader_controls_valid(const reader_controls_config_t *c) {
     uint32_t h=0;for(unsigned i=0;i<4;++i)h|=(uint32_t)c->checksum[i]<<(8*i);
     return h==reader_controls_checksum(c);
 }
-static inline reader_controls_config_t reader_controls_defaults(bool s31) {
+static inline reader_controls_config_t reader_controls_defaults(void) {
     reader_controls_config_t c={.version=1,
         .actions={RC_FULLSCREEN,RC_NONE,RC_CONTENTS,RC_BOOKMARK,RC_TOOLS,RC_AUTOTURN,RC_PREVIOUS,RC_NEXT},
-        .sides={s31?RC_SIDE_BRIGHTNESS:RC_SIDE_OFF,s31?RC_SIDE_WARMTH:RC_SIDE_OFF},.seconds_le={READER_AUTO_MAX_SECONDS,0}};
+        .sides={RC_SIDE_OFF,RC_SIDE_OFF},.seconds_le={READER_AUTO_MAX_SECONDS,0}};
     reader_controls_seal(&c);return c;
 }
-static inline bool reader_controls_action_allowed(unsigned a,bool s31) {
-    return a<RC_ACTION_COUNT && (s31||a<RC_LIGHT||a==RC_TOOLS_TOGGLE);
+static inline bool reader_controls_action_allowed(unsigned a) {
+    return a<RC_ACTION_COUNT && (a<RC_LIGHT||a==RC_TOOLS_TOGGLE);
 }
 /// 只读当前机型的设置。/ Read preferences filtered for this board.
 const reader_controls_config_t *app_settings_reader_controls(void);

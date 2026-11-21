@@ -26,11 +26,7 @@
 // User2026-11-11: S31 must show as Metalio PLUS in the Xteink app instead of the Pico cloud
 // model; the reference firmware's cloud model table maps this board to metalio47. Only the model
 // identifier changes; hardware identity, MACs and saved tokens are untouched.
-#if KIIKO_BOARD_METALIO47
-#define XTEINK_SYNC_DEVICE_TYPE "metalio47"
-#else
 #define XTEINK_SYNC_DEVICE_TYPE "pico"
-#endif
 #define XTEINK_SYNC_TASK_MAX 24
 #define XTEINK_SYNC_URL_MAX 2048
 

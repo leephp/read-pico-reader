@@ -39,8 +39,8 @@ UNIT = r'''
 #include <string.h>
 #define FB_W 220
 #define FB_H 128
-static uint8_t fb[FB_W * FB_H];
-void epd_draw_pixel(int x,int y,uint8_t c,uint8_t *f){(void)f;if(x>=0&&x<FB_W&&y>=0&&y<FB_H)fb[y*FB_W+x]=c>>4;}
+static uint8_t fb[FB_W * FB_H / 2];
+void epd_draw_pixel(int x,int y,uint8_t c,uint8_t *f){(void)f;if(x>=0&&x<FB_W&&y>=0&&y<FB_H){size_t at=y*(FB_W/2)+x/2;unsigned shift=(x%2)*4;fb[at]=(fb[at]&~(15u<<shift))|((c>>4)<<shift);}}
 void *heap_caps_malloc(size_t n,int c){(void)c;return malloc(n);}
 void *heap_caps_calloc(size_t n,size_t s,int c){(void)c;return calloc(n,s);}
 void heap_caps_free(void *p){free(p);}
@@ -55,12 +55,12 @@ void ui_font_draw_title_px(uint8_t *f,int x,int y,int px,const char *s,enum EpdF
 // 画一列竖排文字，回报墨迹的横向范围与推进量。/ Draw a vertical column, report its ink box and advance.
 static void measure(const char *text,int px,int *centre,int *advance,int *left,int *right){
     const int x0 = 40;
-    memset(fb, 15, sizeof(fb));
+    memset(fb, 255, sizeof(fb));
     *advance = ttf_draw_text_px_vertical(fb, x0, 4, px, text, 0, 0, 15);
     *left = 1 << 20; *right = -1;
     for (int y = 0; y < FB_H; ++y)
         for (int x = 0; x < FB_W; ++x)
-            if (fb[y * FB_W + x] == 0) { if (x < *left) *left = x; if (x > *right) *right = x; }
+            if (((fb[y * (FB_W/2) + x/2] >> ((x%2)*4)) & 15) == 0) { if (x < *left) *left = x; if (x > *right) *right = x; }
     assert(*right > *left);
     *centre = (*left + *right) / 2;
 }
@@ -116,7 +116,7 @@ with tempfile.TemporaryDirectory(prefix='pico-vertical-number-') as directory:
              '-Wno-error=format-truncation',
              '-I' + str(work), '-I' + str(ROOT / 'main/font'), '-I' + str(ROOT / 'main/ui'),
              '-I' + str(ROOT / 'main'), '-I' + str(ROOT / 'tools/ui_gesture_stubs')]
-    subprocess.run(flags +font_hanzi_host_sources(ROOT,work)+ [str(work / 'test.c'), str(work / 'assets.c'),
+    subprocess.run(flags +font_hanzi_host_sources(ROOT,work,220,128)+ [str(work / 'test.c'), str(work / 'assets.c'),
                             str(ROOT / 'main/font/ttf_font.c'), '-lm',
                             '-o', str(work / 'test')], check=True)
     subprocess.run([str(work / 'test')], check=True)

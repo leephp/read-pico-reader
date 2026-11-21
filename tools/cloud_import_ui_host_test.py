@@ -128,7 +128,7 @@ with tempfile.TemporaryDirectory(prefix='cloud-ui-') as t:
     subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',str(c),'-o',str(exe)],check=True);subprocess.run([str(exe)],check=True)
 # 抽出真实 IMPORT 分支测试五入口，其他书架操作继续由 book_ui_host_test 覆盖。
 # Exercise the real IMPORT branch; book_ui_host_test covers other shelf actions.
-for rel in ['main/apps/app_book.c','boards/pico/src/main/apps/app_book.c']:
+for rel in ['main/apps/app_book.c','main/apps/app_book.c']:
     path=R/rel
     if not path.exists():continue
     s=path.read_text();a=function('action_at',path);a=a[a.index('    if (s_view == IMPORT) {'):a.index('    if (s_view == TOC) {')]
@@ -158,7 +158,7 @@ int main(void){app_ctx_t ctx={0};for(int i=0;i<5;i++){EpdRect r=import_rect(i);a
 
 # 执行两板文件首页真实命中分支，前三项不能被第四项劫持。
 # Run both production file-hub branches; the fourth route never hijacks the first three.
-for rel in ['main/apps/app_files.c','boards/pico/src/main/apps/app_files.c']:
+for rel in ['main/apps/app_files.c','main/apps/app_files.c']:
     path=R/rel;source=path.read_text();body=function('on_gesture',path)
     a=body.index('    for (int i = 0; !long_press && i < 4; ++i)')
     b=body.index('    if(!long_press&&ui_rect_hit(storage_card_rect()',a)

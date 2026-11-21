@@ -112,10 +112,6 @@ struct app_desc_s {
     bool enter_full;
     /// 系统内容采用快刷差分，根页底栏保留灰阶；Pico设置头像也保留灰阶。/ System content uses fast differences, retaining gray root navigation and Pico settings avatars.
     bool binary_ui;
-#if KIIKO_BOARD_METALIO47
-    /// 可选：当前子视图需要灰阶时绕过二值化；只读查询，不推屏。/ Optional pure query to bypass binary output for the current gray subview.
-    bool (*grayscale_ui)(app_ctx_t* ctx);
-#endif
     /// 二级系统页也保留底栏；阅读正文不继承。/ Retain navigation in system children without changing reader-body chrome.
     bool persistent_navigation;
     /// 根页/子页结构切换复用主页擦白；手动全刷和故障恢复仍优先。/ Use root white maintenance for root/child transitions; explicit full refresh and fault recovery retain priority.

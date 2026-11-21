@@ -48,7 +48,7 @@ static bool cover_station_ready(const read_pico_transfer_status_t *wifi) {
 }
 
 static bool cover_station_compatible(const read_pico_transfer_status_t *wifi) {
-    return cover_station_ready(wifi) && (!KIIKO_BOARD_METALIO47 || wifi->cover_lookup);
+    return cover_station_ready(wifi);
 }
 
 static void cover_lookup_open(void) {
@@ -377,7 +377,7 @@ static app_redraw_t bulk_cover_tick(app_ctx_t *ctx) {
         const unsigned revision = book_weread_cover_revision();
         if (!status.active && revision != s_weread_applied) {
             s_weread_applied = revision;
-            metalio_cover_cache_clear();
+            cover_ram_cache_clear();
             app_home_cover_mode_changed();
             book_lock_collage_invalidate();
             book_store_notify_changed();

@@ -29,8 +29,10 @@ bool continuous_du_init(void);
 int64_t esp_timer_get_time(void);
 void vTaskDelay(int);
 #define pdMS_TO_TICKS(x) (x)
-#define ESP_LOGI(...) ((void)0)
-#define ESP_LOGE(...) ((void)0)
+static inline void test_log(const char *tag, const char *fmt, ...) { (void)tag; (void)fmt; }
+#define ESP_LOGI(...) test_log(__VA_ARGS__)
+#define ESP_LOGE(...) test_log(__VA_ARGS__)
+#define ESP_LOGW(...) test_log(__VA_ARGS__)
 void guard_draw_result(EpdiyHighlevelState*, enum EpdDrawError);
 enum EpdDrawError update_display_area_with(EpdiyHighlevelState*, const void*, int, EpdRect);
 enum EpdDrawError update_display_area_diff_with(EpdiyHighlevelState*, const void*, int, EpdRect);
@@ -85,3 +87,5 @@ int epd_rotated_display_height(void);
 void epd_fill_triangle(int,int,int,int,int,int,uint8_t,uint8_t*);
 
 void read_pico_transfer_resume_after_sleep(void);
+
+static inline bool cst836u_irq_pending(void *tp) { (void)tp; return true; }

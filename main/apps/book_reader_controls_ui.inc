@@ -99,11 +99,7 @@ static void rc_draw_settings(uint8_t*fb){
     }else{
         rc_link(fb,(EpdRect){36,746,612,110},"触摸操作","全屏示意 · 点按 · 长按 · 滑动");
         rc_link(fb,(EpdRect){36,878,612,110},"点击翻页区域",app_settings_reader_vertical_turn()?"上下翻页":"左右翻页");
-#if KIIKO_BOARD_METALIO47
-        rc_link(fb,(EpdRect){36,1010,612,110},"按键控制","左键 · 圆圈键 · 右键");
-#else
         rc_link(fb,(EpdRect){36,1010,612,110},"按键控制","左键 · 中键 · 右键");
-#endif
     }
     rc_done(fb,"完成");ui_text_set_system_scale(false);
 }
@@ -157,19 +153,18 @@ static void rc_arrow(uint8_t*fb,int x1,int y1,int x2,int y2,uint8_t gray){
     if(abs(dx)>abs(dy)){int sign=dx>0?-1:1;epd_draw_line(x2,y2,x2+sign*12,y2-9,gray,fb);epd_draw_line(x2,y2,x2+sign*12,y2+9,gray,fb);}
     else{int sign=dy>0?-1:1;epd_draw_line(x2,y2,x2-9,y2+sign*12,gray,fb);epd_draw_line(x2,y2,x2+9,y2+sign*12,gray,fb);}
 }
-static unsigned rc_pool_count(unsigned group){return group==0?(KIIKO_BOARD_METALIO47?12:11):(KIIKO_BOARD_METALIO47?10:8);}
+static unsigned rc_pool_count(unsigned group){return group==0?11:8;}
 static unsigned rc_pool_action(unsigned group,unsigned index){
-    static const uint8_t quick[]={RC_BOOKMARK,RC_AUTOTURN,RC_EFFECT,RC_REFRESH,RC_FULLSCREEN,RC_TOOLS,RC_TOOLS_TOGGLE,RC_GUIDE,RC_PREVIOUS,RC_NEXT,RC_NONE,RC_LIGHT};
-    static const uint8_t pages[]={RC_CONTENTS,RC_BOOKMARKS,RC_PROGRESS,RC_TEXT,RC_LAYOUT,RC_DISPLAY,RC_TURN_SETTINGS,RC_STATS,RC_BRIGHTNESS,RC_WARMTH};
-    return group==0?quick[index<12?index:10]:pages[index<10?index:0];
+    static const uint8_t quick[]={RC_BOOKMARK,RC_AUTOTURN,RC_EFFECT,RC_REFRESH,RC_FULLSCREEN,RC_TOOLS,RC_TOOLS_TOGGLE,RC_GUIDE,RC_PREVIOUS,RC_NEXT,RC_NONE};
+    static const uint8_t pages[]={RC_CONTENTS,RC_BOOKMARKS,RC_PROGRESS,RC_TEXT,RC_LAYOUT,RC_DISPLAY,RC_TURN_SETTINGS,RC_STATS};
+    return group==0?quick[index<11?index:10]:pages[index<8?index:0];
 }
 static unsigned rc_side_pool(unsigned index){
-    static const uint8_t ids_s31[]={RC_SIDE_BRIGHTNESS,RC_SIDE_WARMTH,RC_SIDE_OFF,RC_SIDE_FONT,RC_SIDE_LINE};
     static const uint8_t ids_pico[]={RC_SIDE_OFF,RC_SIDE_FONT,RC_SIDE_LINE};
-    return KIIKO_BOARD_METALIO47?ids_s31[index<5?index:2]:ids_pico[index<3?index:0];
+    return ids_pico[index<3?index:0];
 }
 static EpdRect rc_menu_rect(void){
-    unsigned count=s_rc_menu_slot>=RC_SLOT_COUNT?(KIIKO_BOARD_METALIO47?5:3):rc_pool_count(s_rc_menu_group);
+    unsigned count=s_rc_menu_slot>=RC_SLOT_COUNT?3:rc_pool_count(s_rc_menu_group);
     int h=(s_rc_menu_slot>=RC_SLOT_COUNT?12:64)+(int)count*48;
     int x=s_rc_anchor.x;if(x+340>672)x=332;if(x<12)x=12;
     int y=s_rc_anchor.y+s_rc_anchor.height+8;if(y+h>1204)y=s_rc_anchor.y-8-h;if(y<12)y=12;
@@ -179,7 +174,7 @@ static void rc_draw_menu(uint8_t*fb){
     if(s_rc_menu_slot<0)return;
     const reader_controls_config_t*c=app_settings_reader_controls();EpdRect r=rc_menu_rect();
     ui_fill_round_rect(fb,(EpdRect){r.x+5,r.y+5,r.width,r.height},15,0xd0);rc_card(fb,r);
-    bool side=s_rc_menu_slot>=RC_SLOT_COUNT;unsigned count=side?(KIIKO_BOARD_METALIO47?5:3):rc_pool_count(s_rc_menu_group);int offset=side?6:54;
+    bool side=s_rc_menu_slot>=RC_SLOT_COUNT;unsigned count=side?3:rc_pool_count(s_rc_menu_group);int offset=side?6:54;
     if(!side){const char*const tabs[]={"快捷动作","打开页面"};for(int i=0;i<2;++i){EpdRect t={r.x+6+i*164,r.y+6,163,42};ui_fill_round_rect(fb,t,10,i==(int)s_rc_menu_group?UI_GRAY_BLACK:0xe8);rc_text(fb,t,21,tabs[i],true,i==(int)s_rc_menu_group);}}
     for(unsigned i=0;i<count;++i){int y=r.y+offset+(int)i*48;unsigned a=side?rc_side_pool(i):rc_pool_action(s_rc_menu_group,i);
         bool selected=side?c->sides[s_rc_menu_slot-RC_SLOT_COUNT]==a:c->actions[s_rc_menu_slot]==a;
@@ -224,14 +219,7 @@ static void rc_draw_touch_more(uint8_t*fb){
 }
 static EpdRect rc_light_slider_rect(void){return(EpdRect){36,950,612,76};}
 static void rc_draw_light(uint8_t*fb){
-#if KIIKO_BOARD_METALIO47
-    ui_text_set_system_scale(true);draw_sheet(fb,790,s_rc_light_warm?"色温调节":"亮度调节");draw_sheet_back(fb,790);
-    unsigned level=metalio_frontlight_position(s_rc_light_warm);char value[16];snprintf(value,sizeof(value),"%u%%",level*100/METALIO_FRONTLIGHT_RANGE);
-    draw_pill_slider(fb,rc_light_slider_rect(),s_rc_light_warm?"冷":"暗",s_rc_light_warm?"暖":"亮",value,level,METALIO_FRONTLIGHT_RANGE+1,21,21);
-    rc_text(fb,(EpdRect){42,1048,590,44},22,"拖动调节，松手保存",true,false);rc_done(fb,"返回阅读");ui_text_set_system_scale(false);
-#else
     (void)fb;
-#endif
 }
 static bool rc_draw_current(uint8_t*fb){
     switch(s_reader_panel){

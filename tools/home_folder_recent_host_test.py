@@ -75,7 +75,7 @@ int main(void){
 '''
 
 def main():
-    for board,relative in [('pico','boards/pico/src/main/apps/app_dashboard.c'),('metalio47','main/apps/app_dashboard.c')]:
+    for board,relative in [('pico','main/apps/app_dashboard.c'),('metalio47','main/apps/app_dashboard.c')]:
         source=ROOT/relative
         unit=UNIT[:UNIT.index('static void reset(')]
         for name in ['consider_book','featured','folder_books','folder_key']:

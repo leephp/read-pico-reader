@@ -71,9 +71,10 @@ size_t heap_caps_get_free_size(unsigned caps){(void)caps;return 16u*1024u*1024u;
 size_t heap_caps_get_largest_free_block(unsigned caps){return heap_caps_get_free_size(caps);}
 const char *app_settings_fonts_dir(void){return "/absent";}
 const char *app_settings_font_path(void){return "builtin";}
-static uint8_t screen[684*1216];
+static uint8_t screen[684*1216/2];
 static unsigned painted;
-void epd_draw_pixel(int x,int y,uint8_t ink,uint8_t*fb){assert(x>=0&&x<684&&y>=0&&y<1216);fb[y*684+x]=ink>>4;++painted;}
+static bool screen_painted(void){for(size_t i=0;i<sizeof(screen);++i)if(screen[i]!=255)return true;return false;}
+void epd_draw_pixel(int x,int y,uint8_t ink,uint8_t*fb){assert(x>=0&&x<684&&y>=0&&y<1216);size_t at=(size_t)y*342+x/2;unsigned shift=(x%2)*4;fb[at]=(fb[at]&~(15u<<shift))|((ink>>4)<<shift);++painted;}
 static void utf8(uint32_t cp,char out[5]){
  if(cp<0x80){out[0]=cp;out[1]=0;}
  else if(cp<0x800){out[0]=0xc0|(cp>>6);out[1]=0x80|(cp&63);out[2]=0;}
@@ -123,7 +124,7 @@ int main(int argc,char**argv){
   uint32_t cp=additional[i];char text[5];utf8(cp,text);size_t before=allocations;
   int cold=ttf_text_width_px(43,text);assert(cold>=0&&allocations==before);
   const glyph_entry_t*g=get_glyph(cp,43);assert(g&&g->advance_x==cold&&ttf_text_width_px(43,text)==cold);
-  if(g->width&&g->height){memset(screen,15,sizeof(screen));painted=0;ttf_draw_text_px(screen,40,240,43,text,EPD_DRAW_ALIGN_LEFT,0,15);assert(painted);}
+  if(g->width&&g->height){memset(screen,255,sizeof(screen));painted=0;ttf_draw_text_px(screen,40,240,43,text,EPD_DRAW_ALIGN_LEFT,0,15);assert(screen_painted());}
  }
 #endif
  // 独立参考来自未缩放的完整Medium轮廓，包含用户反馈的丰富/替/雪/艳/鬓/簪。
@@ -159,12 +160,12 @@ int main(int argc,char**argv){
   int before=ttf_text_width_px(px,text),left=ttf_text_left_bearing_px(px,text);
   g=get_glyph(sample,px);assert(g&&g->advance_x==before&&g->left==left&&ttf_text_width_px(px,text)==before);
   for(int aa=0;aa<2;++aa){
-   ttf_set_antialias(aa);memset(screen,15,sizeof(screen));painted=0;
-   ttf_draw_text_px(screen,40,240,px,text,EPD_DRAW_ALIGN_LEFT,0,15);if(!painted)fprintf(stderr,"empty px=%d stroke=%d aa=%d\n",px,stroke,aa);assert(painted);
-   unsigned grays=0;for(size_t at=0;at<sizeof(screen);++at)grays+=screen[at]>0&&screen[at]<15;
+   ttf_set_antialias(aa);memset(screen,255,sizeof(screen));painted=0;
+   ttf_draw_text_px(screen,40,240,px,text,EPD_DRAW_ALIGN_LEFT,0,15);if(!screen_painted())fprintf(stderr,"empty px=%d stroke=%d aa=%d\n",px,stroke,aa);assert(screen_painted());
+   unsigned grays=0;for(size_t at=0;at<sizeof(screen);++at){unsigned a=screen[at]&15,b=screen[at]>>4;grays+=(a>0&&a<15)+(b>0&&b<15);}
    if(TEST_AA)assert(aa?grays>0:grays==0);
-   memset(screen,15,sizeof(screen));painted=0;
-   assert(ttf_draw_text_px_vertical(screen,480,100,px,text,0,0,15)>0&&painted);
+   memset(screen,255,sizeof(screen));painted=0;
+   assert(ttf_draw_text_px_vertical(screen,480,100,px,text,0,0,15)>0&&screen_painted());
   }
  }
  ttf_set_stroke_adjust_fine(0);ttf_set_antialias(true);
@@ -189,12 +190,12 @@ int main(int argc,char**argv){
 
  if(argc==3){
   const char*lines[]={"丰富、替、雪、艳、鬓、簪。","内建字体深浅与抗锯齿。","春江潮水连海平，明月生。"};
-  for(int aa=0;aa<2;++aa){ttf_set_antialias(aa);memset(screen,15,sizeof(screen));
+  for(int aa=0;aa<2;++aa){ttf_set_antialias(aa);memset(screen,255,sizeof(screen));
    int pxs[]={24,32,40,43,48,60};int y=70;
    for(unsigned n=0;n<sizeof(pxs)/sizeof(pxs[0]);++n){
     ttf_draw_text_px(screen,30,y,pxs[n],lines[n%3],EPD_DRAW_ALIGN_LEFT,0,15);y+=100;}
    char path[1024];snprintf(path,sizeof(path),"%s-aa%d.pgm",argv[2],aa);FILE*f=fopen(path,"wb");assert(f);
-   fprintf(f,"P5\n684 1216\n255\n");for(size_t i=0;i<sizeof(screen);++i){uint8_t v=screen[i]*17;assert(fwrite(&v,1,1,f)==1);}assert(!fclose(f));}
+   fprintf(f,"P5\n684 1216\n255\n");for(size_t i=0;i<sizeof(screen);++i){uint8_t v[2]={(screen[i]&15)*17,(screen[i]>>4)*17};assert(fwrite(v,1,2,f)==2);}assert(!fclose(f));}
  }
  assert(ttf_font_open(argv[1])==ESP_OK&&!ttf_font_is_builtin());
  assert(!ttf_font_has_text("行")&&ttf_text_width_px(48,"文")>native_wen&&ttf_text_width_px(48,"行")==native_xing);

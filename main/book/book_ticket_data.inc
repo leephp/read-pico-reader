@@ -1,9 +1,9 @@
-/* Shared ticket persistence and time formatting. / 双机共用票根持久化与时长格式。 */
+/* Ticket persistence and time formatting. / 票根持久化与时长格式。 */
 #define TICKET_DAY_MS UINT64_C(86400000)
 #define TICKET_STATS_MAGIC UINT32_C(0x52505432)
 #define TICKET_POSITION_MAGIC UINT32_C(0x52505031)
 
-static const char *const ticket_namespace = KIIKO_BOARD_METALIO47 ? "mt_ticket" : "rp_ticket";
+static const char *const ticket_namespace = "rp_ticket";
 
 typedef struct {
     uint32_t magic, day;

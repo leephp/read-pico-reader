@@ -33,10 +33,6 @@
 #include "read_pico_crashlog.h"
 
 #include "host/ble_gap.h"
-#if KIIKO_BOARD_METALIO47
-#include "host/ble_att.h"
-#else
-#endif
 #include "host/ble_gatt.h"
 #include "host/ble_hs.h"
 #include "host/ble_hs_adv.h"
@@ -55,22 +51,6 @@ static const char *TAG = "ble_pt";
 // 网络占用先登记，再串行拆栈，防止主循环同时重建蓝牙。/ Reserve network memory before serial teardown to prevent a concurrent BLE restart.
 static atomic_flag s_lifecycle = ATOMIC_FLAG_INIT;
 static atomic_uint s_network_users;
-#if KIIKO_BOARD_METALIO47
-// S31保留锁屏/BOOT的蓝牙暂停契约；不改PR28学习/订阅状态机。
-// Keep the S31 lock/BOOT suspension contract without changing PR28 learning/subscription.
-static atomic_bool s_sleep_suspended;
-static char s_sleep_peer[18];
-static char s_network_peer[18];
-static bool s_network_peer_pending;
-// 文件传输/临时扫描持有射频租约；仅常驻联网不持有，保持日常WiFi与翻页器共存。
-// File transfer/temporary scans reserve the radio; network-only sessions do not, retaining everyday coexistence.
-static bool metalio_radio_reserved(void) {
-    return atomic_load(&s_sleep_suspended)||atomic_load(&s_network_users)>0;
-}
-
-
-#else
-#endif
 static TaskHandle_t s_host_task;
 static bool lifecycle_take(uint32_t timeout_ms) {
     const int64_t deadline = esp_timer_get_time() + (int64_t)timeout_ms * 1000;
@@ -752,7 +732,7 @@ static const ble_pt_device_t *device_find(const char *addr) {
     return NULL;
 }
 
-#if defined(ESP_PLATFORM) && defined(__GNUC__) && !KIIKO_BOARD_METALIO47
+#if defined(ESP_PLATFORM) && defined(__GNUC__)
 #pragma GCC push_options
 #pragma GCC optimize ("Os")
 #endif
@@ -1440,7 +1420,7 @@ static int gap_cb(struct ble_gap_event *event, void *arg) {
     }
 }
 
-#if defined(ESP_PLATFORM) && defined(__GNUC__) && !KIIKO_BOARD_METALIO47
+#if defined(ESP_PLATFORM) && defined(__GNUC__)
 #pragma GCC pop_options
 #endif
 // 按给定地址类型发起连接；成功返回 0，失败返回 NimBLE 的错误码。
@@ -1601,27 +1581,10 @@ static void host_task(void *param) {
     vTaskDelete(NULL);
 }
 
-#if KIIKO_BOARD_METALIO47
-static void network_resume_peer(void) {
-    if(s_network_peer_pending&&!atomic_load(&s_network_users)) {
-        if(s_network_peer[0])snprintf(s_reconnect_addr,sizeof(s_reconnect_addr),"%s",s_network_peer);
-        s_network_peer[0]=0;s_network_peer_pending=false;
-    }
-}
-#else
-#endif
 
 static esp_err_t start_locked(void) {
-#if KIIKO_BOARD_METALIO47
-    if (metalio_radio_reserved()) return ESP_ERR_INVALID_STATE;
-#else
     if (atomic_load(&s_network_users)) return ESP_ERR_INVALID_STATE;
-#endif
     if (s_running) return ESP_OK;
-#if KIIKO_BOARD_METALIO47
-    network_resume_peer();
-#else
-#endif
 
     // 内存闸门：NimBLE 的 host 动态分配走 PSRAM（CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL），
     // 但控制器与协议栈任务必须落在内部 RAM——它跑在硬件路径上，读不到 PSRAM。所以卡住的
@@ -1726,22 +1689,10 @@ esp_err_t ble_pt_stop(uint32_t timeout_ms) {
     return error;
 }
 esp_err_t ble_pt_network_acquire(void) {
-#if KIIKO_BOARD_METALIO47
-    if(!lifecycle_take(2000))return ESP_ERR_TIMEOUT;
-    unsigned previous=atomic_fetch_add(&s_network_users,1);
-    if(!previous) {
-        snprintf(s_network_peer,sizeof(s_network_peer),"%s",s_link_up?s_conn_addr:s_reconnect_addr);
-        s_network_peer_pending=true;
-    }
-    const esp_err_t error=stop_locked();
-    if(error!=ESP_OK)atomic_fetch_sub(&s_network_users,1);
-    lifecycle_give();return error;
-#else
     atomic_fetch_add(&s_network_users, 1);
     const esp_err_t error = ble_pt_stop(2000);
     if (error != ESP_OK) atomic_fetch_sub(&s_network_users, 1);
     return error;
-#endif
 }
 void ble_pt_network_release(void) {
     unsigned users = atomic_load(&s_network_users);
@@ -1800,11 +1751,7 @@ static bool why_load(char *out, size_t cap) {
 #define BLE_PT_WANT_DEBOUNCE_MS 2000
 
 void ble_pt_sync(bool wanted) {
-#if KIIKO_BOARD_METALIO47
-    if (metalio_radio_reserved()) wanted = false;
-#else
     if (atomic_load(&s_network_users)) wanted = false;
-#endif
     // 停用立即生效；仅重新启动防抖，网络不能等两秒再释放内存。/ Stop immediately; debounce only restarts so networking never waits two seconds for memory.
     if (!wanted && s_running) {
         if (ble_pt_stop(2000) != ESP_OK) return;
@@ -1879,11 +1826,7 @@ void ble_pt_sync(bool wanted) {
     // Record first, then act: a hard crash after this point still leaves the count raised.
     boot_tries_store((uint8_t)(tries + 1));
     const esp_err_t err = ble_pt_start();
-#if KIIKO_BOARD_METALIO47
-    if (err == ESP_ERR_INVALID_STATE && atomic_load(&s_sleep_suspended)) {
-#else
     if (err == ESP_ERR_INVALID_STATE && atomic_load(&s_network_users)) {
-#endif
         boot_tries_store(tries);
         return;
     }
@@ -2064,28 +2007,6 @@ const ble_pt_bond_t *ble_pt_bond(uint8_t index) {
     return index < s_bond_count ? &s_bonds[index] : NULL;
 }
 
-#if KIIKO_BOARD_METALIO47
-esp_err_t ble_pt_forget(const char *addr) {
-    if (!addr || !addr[0]) return ESP_ERR_INVALID_ARG;
-    if (!s_running || !ble_hs_synced()) return ESP_ERR_INVALID_STATE;
-    char saved_addr[18];snprintf(saved_addr,sizeof(saved_addr),"%s",addr);
-    const ble_pt_bond_t *bond=bond_find(saved_addr);
-    if (!bond) return ESP_ERR_NOT_FOUND;
-    unsigned bytes[6];
-    if (sscanf(saved_addr,"%x:%x:%x:%x:%x:%x",&bytes[0],&bytes[1],&bytes[2],&bytes[3],&bytes[4],&bytes[5])!=6)
-        return ESP_ERR_INVALID_ARG;
-    ble_addr_t peer={.type=bond->addr_type};
-    for (int i=0;i<6;i++) peer.val[5-i]=(uint8_t)bytes[i];
-    // SDK blecent示例删除真正的LTK/IRK，不能只删界面列表。/ Delete the real NimBLE peer keys as blecent does.
-    if (ble_store_util_delete_peer(&peer)!=0) return ESP_FAIL;
-    if (!strcasecmp(saved_addr,s_conn_addr)) ble_pt_disconnect();
-    if (!strcasecmp(saved_addr,s_reconnect_addr)) s_reconnect_addr[0]=0;
-    if (!strcasecmp(saved_addr,s_pending_addr)) s_pending_addr[0]=0;
-    for (uint8_t i=0;i<s_bond_count;i++) {
-        if (strcasecmp(s_bonds[i].addr,saved_addr)) continue;
-        memmove(&s_bonds[i],&s_bonds[i+1],sizeof(s_bonds[0])*(s_bond_count-i-1));
-        s_bond_count--;bonds_save();break;
-#else
 void ble_pt_forget(const char *addr) {
     if (!addr) return;
     if(!strcmp(s_reconnect_addr,addr))s_reconnect_addr[0]=0;
@@ -2096,26 +2017,14 @@ void ble_pt_forget(const char *addr) {
         s_bond_count--;
         bonds_save();
         break;
-#endif
     }
-#if KIIKO_BOARD_METALIO47
-    nvs_handle_t h;
-    if (nvs_open(NVS_NS_BINDINGS,NVS_READWRITE,&h)==ESP_OK) {
-        char key[16];nvs_erase_key(h,bond_key(key,sizeof(key),saved_addr));nvs_commit(h);nvs_close(h);
-#else
     nvs_handle_t h;  // 绑定也跟着清掉 / drop the bindings with it
     if (nvs_open(NVS_NS_BINDINGS, NVS_READWRITE, &h) == ESP_OK) {
         char key[16];
         nvs_erase_key(h, bond_key(key, sizeof(key), addr));
         nvs_commit(h);
         nvs_close(h);
-#endif
     }
-#if KIIKO_BOARD_METALIO47
-    if (!strcasecmp(saved_addr,s_bindings.addr)) memset(&s_bindings,0,sizeof(s_bindings));
-    return ESP_OK;
-#else
-#endif
 }
 
 /* ---- 手动映射 / Manual bindings ---- */
@@ -2224,29 +2133,3 @@ ble_pt_action_t ble_pt_action_for_frame(const ble_pt_frame_t *frame) {
     if (frame->bytes[0] == YXT_CODE_NEXT) return BLE_PT_ACTION_NEXT;
     return BLE_PT_ACTION_NONE;
 }
-#if KIIKO_BOARD_METALIO47
-
-
-/* S31 lock/BOOT lifecycle compatibility, independent of PR28 frame algorithm. */
-esp_err_t ble_pt_suspend_for_sleep(void) {
-    if (!lifecycle_take(2000)) return ESP_ERR_TIMEOUT;
-    if (atomic_load(&s_sleep_suspended)) { lifecycle_give(); return ESP_OK; }
-    snprintf(s_sleep_peer,sizeof(s_sleep_peer),"%s",s_link_up?s_conn_addr:s_reconnect_addr);
-    atomic_store(&s_sleep_suspended,true);
-    const esp_err_t err=stop_locked();
-    if (err!=ESP_OK) atomic_store(&s_sleep_suspended,false);
-    lifecycle_give();
-    return err;
-}
-void ble_pt_resume_after_sleep(void) {
-    // 主循环按用户设置重启；恢复连接目标，避免睡醒后必须重新配对。
-    // The loop restarts according to settings; retain the peer for wake reconnect.
-    if (!lifecycle_take(2000)) return;
-    if (atomic_exchange(&s_sleep_suspended,false)) {
-        snprintf(s_reconnect_addr,sizeof(s_reconnect_addr),"%s",s_sleep_peer);
-        s_sleep_peer[0]=0;
-    }
-    lifecycle_give();
-}
-#else
-#endif

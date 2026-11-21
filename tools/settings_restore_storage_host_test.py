@@ -5,8 +5,8 @@ from pathlib import Path
 import json,subprocess,tempfile
 R=Path(__file__).resolve().parents[1]
 view=R/'.kiiko-source-view.json'
-board=json.loads(view.read_text())['board'] if view.exists() else 'metalio47'
-fixture=R/('tools/settings_backup_host_test.c' if view.exists() else 'boards/metalio47/tests/tools/settings_backup_host_test.c')
+board='pico'
+fixture=R/'tools/settings_backup_host_test.c'
 legacy=fixture.read_text().replace('#include "../main/settings.c"','#include '+json.dumps(str(R/'main/settings.c')))
 unit=r'''
 #define ESP_PLATFORM 1
@@ -33,6 +33,6 @@ with tempfile.TemporaryDirectory(prefix='settings-storage-') as folder:
  (p/'ui_locale_format.h').write_text('#pragma once\n')
  (R/'build/book-tests/settings-card').mkdir(parents=True,exist_ok=True)
  subprocess.run(['cc','-std=gnu11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',
-  f'-DKIIKO_BOARD_METALIO47={int(board=="metalio47")}','-I'+str(p),'-I'+str(R/'tools/settings_backup_stubs'),
+  '-I'+str(p),'-I'+str(R/'tools/settings_backup_stubs'),
   '-I'+str(R/'components/read_pico_transfer/include'),str(p/'test.c'),'-o',str(p/'test')],cwd=R,check=True)
  subprocess.run([str(p/'test')],cwd=R,check=True)

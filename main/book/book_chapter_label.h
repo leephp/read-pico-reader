@@ -8,7 +8,7 @@
 
 // PICO的4MiB应用槽只对目录/题头字符串识别按体积编译，不影响正文栅格与刷屏。
 // Size-optimize Pico's heading/TOC string helpers within its 4MiB slots, leaving glyph and display loops alone.
-#if defined(ESP_PLATFORM) && !KIIKO_BOARD_METALIO47 && defined(__GNUC__) && !defined(__clang__)
+#if defined(ESP_PLATFORM) && defined(__GNUC__) && !defined(__clang__)
 #pragma GCC push_options
 #pragma GCC optimize("Os")
 #endif
@@ -243,6 +243,6 @@ static inline bool chapter_label_repeats(const char *original, const char *candi
         (!*b.subtitle || chapter_label_text_equal(a.subtitle, b.subtitle));
 }
 
-#if defined(ESP_PLATFORM) && !KIIKO_BOARD_METALIO47 && defined(__GNUC__) && !defined(__clang__)
+#if defined(ESP_PLATFORM) && defined(__GNUC__) && !defined(__clang__)
 #pragma GCC pop_options
 #endif

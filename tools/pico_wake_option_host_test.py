@@ -7,7 +7,7 @@ from home_cover_cache_host_test import function
 ROOT=Path(__file__).resolve().parents[1]
 settings=ROOT/'main/settings.c'
 ui=(ROOT/'main/apps/app_device_settings.c').read_text()
-boot_path=ROOT/'boards/pico/src/main/app_main.c'
+boot_path=ROOT/'main/app_main.c'
 if not boot_path.exists(): boot_path=ROOT/'main/app_main.c'
 boot=boot_path.read_text()
 unit=r'''
