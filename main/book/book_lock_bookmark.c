@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: LicenseRef-Kiikoread-Personal-Study-1.0
  * 中文：透明PNG书封直接叠加在当前画面上；保留原画布比例，不依赖阅读记录或额外整帧缓存。
  * English: Composite a transparent PNG cover over the current frame, preserving canvas ratio without reader history or an extra full-frame cache.
- * S31用户修订：仅合成时将alpha250–255归为不透明，保留原始层与更低透明度。
- * S31 user revision: snap alpha250–255 only during composition, retaining the source layer and lower opacity.
  * 用户2026-10-21修订：有界PSRAM行环合并阴影/图案读取，保留逐像素结果；低内存沿用原双遍，缓存完整校验先于底图修改。
  * User revision2026-10-21: a bounded PSRAM row ring fuses shadow/art reads with identical pixels; low memory retains two passes and cache validation precedes background edits.
  * 用户2026-10-24修订：缓存灰度/alpha字节对无损行压缩，FAT安全替换，继续完整校验后再叠加。
  * User revision2026-10-24: losslessly pack cached gray/alpha pairs and replace safely on FAT, retaining full validation before composition.
+ * 用户2026-11-04：内存充足时暂存校验中的解压层，完整校验后按原算法合成并释放；低内存沿用行式路径。
+ * User2026-11-04: retain decoded pixels during validation when memory permits, compose identically then free; low memory retains streaming.
  */
 #include "book_lock_bookmark.h"
 #include "book_cover.h"
@@ -96,18 +96,6 @@ static uint8_t pixel(const uint8_t *fb,int x,int y) {
     }
     return (epd_get_pixel(px,py,epd_width(),epd_height(),fb)>>4)*17u;
 }
-
-#if KIIKO_BOARD_METALIO47
-// 将接近满值的透明度归为不透明，并还原预乘灰度，避免16灰抖动放大少量底图渗透。
-// Snap near-full alpha to opaque and unpremultiply gray so16-level dithering cannot amplify slight backdrop leakage.
-// 仅透明书封使用；alpha<250的真实半透明和原始缓存字节保持。
-// Apply only to transparent covers; retain true semitransparency below250 and original cached bytes.
-static unsigned seal_art_gray(unsigned gray,unsigned alpha,unsigned background) {
-    unsigned value=alpha>=250 ? (gray*255u+alpha/2u)/alpha :
-        gray+(background*(255u-alpha)+127u)/255u;
-    return value>255u?255u:value;
-}
-#endif
 
 // 缓存的是PNG层，不含阅读底图；逐行叠加到每次锁屏的真实当前页面。
 // Cache only the PNG layer, then stream it over the current page without retaining fonts/images twice.
@@ -282,24 +270,32 @@ static bool seal_build(const char *path,seal_header_t *header) {
     if(ok&&seal_publish())return true;
     (void)remove(SEAL_PACK);return false;
 }
-static FILE *seal_open(const seal_header_t *wanted) {
+static FILE *seal_open(const seal_header_t *wanted,uint8_t **decoded) {
+    if(decoded)*decoded=NULL;
     FILE *f=fopen(SEAL_CACHE,"rb");if(!f)return NULL;
     seal_header_t h;uint8_t row[684*2];uint32_t sum=2166136261u;
     bool ok=fread(&h,1,sizeof(h),f)==sizeof(h)&&h.magic==wanted->magic&&h.width==wanted->width&&
         h.height==wanted->height&&h.key==wanted->key;
+    uint8_t *layer=NULL;
+    // 完整校验时保留解压层，避免随后再次读卡/解压；保留1MiB余量，失败沿用行式路径。
+    // Retain decoded pixels during validation to avoid a second read/decode. Keep1MiB free; allocation failure retains streaming.
+    const size_t bytes=(size_t)wanted->width*wanted->height*2;
+    if(ok&&decoded&&heap_caps_get_free_size(MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)>=bytes+1024u*1024u)
+        layer=heap_caps_malloc(bytes,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
     for(unsigned y=0;y<wanted->height&&ok;++y) {
-        ok=seal_read_row(f,row,wanted->width);
-        if(ok)sum=seal_checksum(sum,row,wanted->width*2);
+        uint8_t *target=layer?layer+(size_t)y*wanted->width*2:row;
+        ok=seal_read_row(f,target,wanted->width);
+        if(ok)sum=seal_checksum(sum,target,wanted->width*2);
     }
     if(ok)ok=sum==h.checksum&&fgetc(f)==EOF&&!ferror(f);
-    if(ok)return f;
-    fclose(f);return NULL;
+    if(ok){if(decoded)*decoded=layer;return f;}
+    free(layer);fclose(f);return NULL;
 }
-// 六行阴影偏移只需七行环；额外十六行顺序预读减少TF小读，不持有整屏或完整PNG层。
-// A six-row shadow offset needs a seven-row ring; sixteen-row prefetches reduce small SD reads without holding a frame or full PNG layer.
-static bool seal_draw_rows(FILE *f,uint8_t *fb,unsigned w,unsigned h,uint8_t *work,bool *started) {
+// 同一合成循环读取已校验内存层或低内存行环；两者保留相同阴影/图案混合顺序。
+// One compositor reads a validated memory layer or a bounded row ring, preserving the same shadow/art blending order.
+static bool seal_draw_rows(FILE *f,uint8_t *fb,unsigned w,unsigned h,uint8_t *work,uint8_t *decoded,bool *started) {
     const size_t row_bytes=(size_t)w*2;
-    uint8_t *block=work+7*row_bytes;
+    uint8_t *block=work?work+7*row_bytes:NULL;
     unsigned buffered=0,block_row=0;
     const int ox=(684-(int)w)/2,oy=(1216-(int)h)/2;
     int dx=1,dy=epd_width(),origin=0;
@@ -309,10 +305,11 @@ static bool seal_draw_rows(FILE *f,uint8_t *fb,unsigned w,unsigned h,uint8_t *wo
         case EPD_ROT_INVERTED_LANDSCAPE:dx=-1;dy=-epd_width();origin=epd_width()*epd_height()-1;break;
         default:break;
     }
-    if(fseek(f,sizeof(seal_header_t),SEEK_SET))return false;
+    if(!decoded&&fseek(f,sizeof(seal_header_t),SEEK_SET))return false;
     for(unsigned y=0;y<h+6&&oy+(int)y<1216;++y) {
         uint8_t *art=NULL;
-        if(y<h) {
+        if(decoded){if(y<h)art=decoded+(size_t)y*row_bytes;}
+        else if(y<h) {
             if(block_row==buffered) {
                 buffered=h-y<16?h-y:16;block_row=0;
                 for(unsigned i=0;i<buffered;++i)if(!seal_read_row(f,block+i*row_bytes,w))return false;
@@ -320,7 +317,7 @@ static bool seal_draw_rows(FILE *f,uint8_t *fb,unsigned w,unsigned h,uint8_t *wo
             art=work+(y%7)*row_bytes;
             memcpy(art,block+block_row++*row_bytes,row_bytes);
         }
-        const uint8_t *shadow=y>=6?work+((y-6)%7)*row_bytes:NULL;
+        const uint8_t *shadow=y>=6?(decoded?decoded+(size_t)(y-6)*row_bytes:work+((y-6)%7)*row_bytes):NULL;
         int at=origin+(oy+(int)y)*dy+ox*dx;
         for(unsigned x=0;x<w+4&&ox+(int)x<684;++x,at+=dx) {
             unsigned a=art&&x<w?art[x*2+1]:0;
@@ -331,11 +328,7 @@ static bool seal_draw_rows(FILE *f,uint8_t *fb,unsigned w,unsigned h,uint8_t *wo
             unsigned value=((*target>>shift)&15)*17u;
             if(sa)value=ui_image_dither_gray((value*(255-sa/5)+127)/255,xx,yy);
             if(a) {
-#if KIIKO_BOARD_METALIO47
-                value=seal_art_gray(art[x*2],a,value);
-#else
                 value=art[x*2]+(value*(255-a)+127)/255;
-#endif
                 if(value>255)value=255;
                 value=ui_image_dither_gray(value,xx,yy);
             }
@@ -343,7 +336,7 @@ static bool seal_draw_rows(FILE *f,uint8_t *fb,unsigned w,unsigned h,uint8_t *wo
             *target=(uint8_t)((*target&~(15u<<shift))|((value>>4)<<shift));
         }
     }
-    return fgetc(f)==EOF&&!ferror(f);
+    return decoded||(fgetc(f)==EOF&&!ferror(f));
 }
 static bool seal_draw(uint8_t *fb,const char *path,unsigned w,unsigned h,bool *started) {
     struct stat st;if(stat(path,&st))return false;
@@ -352,12 +345,18 @@ static bool seal_draw(uint8_t *fb,const char *path,unsigned w,unsigned h,bool *s
     key=(key^(uint64_t)st.st_size)*UINT64_C(1099511628211);
     key=(key^(uint64_t)st.st_mtime)*UINT64_C(1099511628211);
     seal_header_t wanted={.magic=UINT32_C(0x53454132),.width=w,.height=h,.key=key};
-    FILE *f=seal_open(&wanted);
-    if(!f&&seal_build(path,&wanted))f=seal_open(&wanted);
+    uint8_t *decoded=NULL;
+    FILE *f=seal_open(&wanted,&decoded);
+    if(!f&&seal_build(path,&wanted))f=seal_open(&wanted,&decoded);
     if(!f)return false;
+    if(decoded) {
+        fclose(f);
+        bool ok=seal_draw_rows(NULL,fb,w,h,NULL,decoded,started);
+        free(decoded);return ok;
+    }
     uint8_t *work=heap_caps_malloc((size_t)w*2*23,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
     if(work) {
-        bool ok=seal_draw_rows(f,fb,w,h,work,started);
+        bool ok=seal_draw_rows(f,fb,w,h,work,NULL,started);
         free(work);fclose(f);return ok;
     }
     uint8_t row[684*2];bool ok=true;int ox=(684-(int)w)/2,oy=(1216-(int)h)/2;
@@ -370,11 +369,7 @@ static bool seal_draw(uint8_t *fb,const char *path,unsigned w,unsigned h,bool *s
                 int xx=ox+x+(pass?0:4),yy=oy+y+(pass?0:6);
                 if(xx>=684||yy>=1216)continue;
                 unsigned bg=pixel(fb,xx,yy);
-#if KIIKO_BOARD_METALIO47
-                unsigned value=pass?seal_art_gray(row[x*2],a,bg):(bg*(255-a/5)+127)/255;
-#else
                 unsigned value=pass?row[x*2]+(bg*(255-a)+127)/255:(bg*(255-a/5)+127)/255;
-#endif
                 if(value>255)value=255;
                 *started=true;
                 epd_draw_pixel(xx,yy,ui_image_dither_gray(value,xx,yy),fb);
@@ -415,11 +410,7 @@ bool book_lock_bookmark_draw(uint8_t *fb,const char *path) {
         for(unsigned y=0;y<h;++y)for(unsigned x=0;x<w;++x){
             size_t at=(size_t)y*w+x;unsigned a=alpha[at];if(!a)continue;
             int xx=ox+x,yy=oy+y;
-#if KIIKO_BOARD_METALIO47
-            unsigned value=seal_art_gray(layers[at],a,pixel(fb,xx,yy));
-#else
             unsigned value=layers[at]+(pixel(fb,xx,yy)*(255-a)+127)/255;
-#endif
             if(value>255)value=255;
             epd_draw_pixel(xx,yy,ui_image_dither_gray(value,xx,yy),fb);
         }

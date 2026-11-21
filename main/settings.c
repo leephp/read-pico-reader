@@ -23,13 +23,7 @@
 #include "settings.h"
 #include "setup_state.h"
 #include "kiiko_board_config.h"
-#define READER_TURN_EFFECT_MAX KIIKO_BOARD_READER_TURN_EFFECT_MAX
-static bool reader_full_pages_valid(uint8_t pages) {
-#if KIIKO_BOARD_METALIO47
-    if (pages == 20) return true;
-#endif
-    return pages == 0 || pages == 5 || pages == 10 || pages == 15 || pages == 30;
-}
+#define READER_TURN_EFFECT_MAX 2
 #include "book/book_font_size.h"
 
 #include <stdio.h>
@@ -56,10 +50,8 @@ static bool reader_full_pages_valid(uint8_t pages) {
 #define NVS_KEY_SLEEP "sleep"
 #define NVS_KEY_SHUTDOWN_MODE "shutdown"
 #define NVS_KEY_WAKE_PRESSES "wake_press"
-#if KIIKO_BOARD_METALIO47
 #define NVS_KEY_PIN_GRACE "pin_grace"
 #define NVS_KEY_PIN_LOCK_AT "pin_lck_at"
-#endif
 #define NVS_KEY_HOME_FULL "home_full"
 #define NVS_KEY_HOME_COMPONENT "home_widget"
 #define NVS_KEY_HOME_GOAL "home_goal"
@@ -95,7 +87,6 @@ static bool reader_full_pages_valid(uint8_t pages) {
 #define NVS_KEY_READER_KEYS_V2 "rd_keys_v2"
 #define NVS_KEY_VERTICAL_TURN "rd_vertical"
 #define NVS_KEY_BLE_TURNER "ble_turn"
-#define NVS_KEY_FAST_CHARGE "fast_chg"
 #define NVS_KEY_SHELF_RECENT "shelf_recent"
 #define NVS_KEY_BOOK_LINE "bk_line"
 #define NVS_KEY_BOOK_PARA "bk_para"
@@ -116,25 +107,15 @@ static bool reader_full_pages_valid(uint8_t pages) {
 #define MEDIA_DIR_MAX 96
 
 static app_sleep_mode_t s_sleep = APP_SLEEP_DEEP;
-#if KIIKO_BOARD_METALIO47
-static bool s_staged_shutdown = true;
-#else
 static bool s_staged_shutdown;
-#endif
 static uint8_t s_wake_presses = 1;
-#if KIIKO_BOARD_METALIO47
-static uint8_t s_pin_grace_code_v;
-static uint32_t s_pin_locked_at;
-#endif
+static uint8_t s_pin_grace_code_v;  // 0-4 档位码，NVS 存码不存分钟 / 0-4 step code, NVS stores the code not minutes
+static uint32_t s_pin_locked_at;    // 最近一次带密码锁屏的 unix 秒 / last PIN-enabled lock, unix seconds
 static bool s_home_full_refresh = true;
 static app_home_component_t s_home_component = APP_HOME_MOON;
 static uint8_t s_home_goal_minutes = 30;
 static app_main_refresh_mode_t s_main_refresh;
-#if KIIKO_BOARD_METALIO47
-static char s_device_name[64] = "Metalio S31";
-#else
 static char s_device_name[64] = "kiikoread";
-#endif
 static char s_avatar[288];
 static char s_status_signature[96];
 static char s_font[FONT_PATH_MAX];
@@ -166,12 +147,6 @@ static uint8_t s_reader_hold_action = APP_READER_KEY_HOME;
 static uint8_t s_reader_keys[3] = {APP_READER_KEY_PREV, APP_READER_KEY_TOOLS, APP_READER_KEY_NEXT};
 static bool s_reader_vertical_turn;
 static bool s_ble_turner;
-// 快充默认开启：首次上电即 1.5A，用户关闭后才回到标准 1A。
-// Fast charge is on by default: 1.5 A from first boot, standard 1 A only after the user turns it off.
-static bool s_fast_charge = true;
-#if KIIKO_BOARD_METALIO47
-static app_ai_action_t s_ai_short=APP_AI_REFRESH;
-#endif
 static bool s_shelf_recent_sort;
 static uint8_t s_shelf_order;
 // 书内自带字体默认开启：多数带字体的书排版就是靠它才对得上版。
@@ -192,9 +167,7 @@ static uint8_t s_shelf_style = 6;
 static char s_books_dir[MEDIA_DIR_MAX] = "/sdcard/books";
 static char s_fonts_dir[MEDIA_DIR_MAX] = "/sdcard/fonts";
 static void nvs_put_u8(const char* key, uint8_t value);
-#if KIIKO_BOARD_METALIO47
-static void nvs_put_u32(const char* key,uint32_t value);
-#endif
+static void nvs_put_u32(const char* key, uint32_t value);
 
 static bool valid_media_dir(const char* path) {
     if (!path || strncmp(path, "/sdcard/", 8) || !path[8] ||
@@ -230,15 +203,6 @@ static uint8_t valid_book_px(uint8_t px) {
     return px >= BOOK_READER_PX_MIN && px <= BOOK_READER_PX_MAX ? px : 48;
 }
 
-#if KIIKO_BOARD_METALIO47
-static void load_lock_sleep_policy(nvs_handle_t h) {
-    uint8_t raw=1;
-    if(nvs_get_u8(h,NVS_KEY_SHUTDOWN_MODE,&raw)==ESP_OK && raw<=2) {
-        s_staged_shutdown=raw!=0;
-        s_sleep=raw==2?APP_SLEEP_LIGHT:APP_SLEEP_DEEP;
-    }
-}
-#endif
 void app_settings_init(void) {
     s_reader_controls_loaded=false;s_shelf_badges=true;
     s_book_heading_style = BOOK_HEADING_DEFAULT_STYLE;
@@ -249,7 +213,6 @@ void app_settings_init(void) {
     s_home_full_refresh = true;
     s_home_component = APP_HOME_MOON;
     s_shelf_style = 6;
-    s_fast_charge = true;
     esp_err_t err = nvs_flash_init();
     // 设置分区异常时保留原数据供恢复，绝不因空间不足自动擦除用户资料。
     // Preserve settings on NVS errors; a full partition must never silently erase profile data.
@@ -266,21 +229,19 @@ void app_settings_init(void) {
         s_sleep = (app_sleep_mode_t)raw;
     }
     raw = 0;
-#if KIIKO_BOARD_METALIO47
-    load_lock_sleep_policy(h);
-#else
     if (nvs_get_u8(h, NVS_KEY_SHUTDOWN_MODE, &raw) == ESP_OK)
         s_staged_shutdown = raw == 1;
-#endif
     raw = 1;
     if (nvs_get_u8(h, NVS_KEY_WAKE_PRESSES, &raw) != ESP_OK || (raw != 1 && raw != 2)) raw = 1;
     s_wake_presses = raw;
-#if KIIKO_BOARD_METALIO47
-    s_pin_grace_code_v=0;raw=0;
-    if(nvs_get_u8(h,NVS_KEY_PIN_GRACE,&raw)==ESP_OK && raw<=4)s_pin_grace_code_v=raw;
-    s_pin_locked_at=0;
-    (void)nvs_get_u32(h,NVS_KEY_PIN_LOCK_AT,&s_pin_locked_at);
-#endif
+    raw = 0;
+    s_pin_grace_code_v = 0;
+    if (nvs_get_u8(h, NVS_KEY_PIN_GRACE, &raw) == ESP_OK && raw <= 4) s_pin_grace_code_v = raw;
+    s_pin_locked_at = 0;
+    {
+        uint32_t locked_at = 0;
+        if (nvs_get_u32(h, NVS_KEY_PIN_LOCK_AT, &locked_at) == ESP_OK) s_pin_locked_at = locked_at;
+    }
     raw = 1;
     if (nvs_get_u8(h, NVS_KEY_HOME_FULL, &raw) == ESP_OK && raw <= 1) s_home_full_refresh = raw == 1;
     raw = 0;
@@ -303,17 +264,9 @@ void app_settings_init(void) {
         s_auto_lock_minutes = 5;
     size_t value_len = sizeof(s_device_name);
     if (nvs_get_str(h, NVS_KEY_DEVICE_NAME, s_device_name, &value_len) != ESP_OK || !s_device_name[0])
-#if KIIKO_BOARD_METALIO47
-        strlcpy(s_device_name, "Metalio S31", sizeof(s_device_name));
-#else
         strlcpy(s_device_name, "kiikoread", sizeof(s_device_name));
-#endif
     // 仅迁移旧默认名字，保留用户填写的姓名。/ Migrate only the old default, preserving custom names.
-#if KIIKO_BOARD_METALIO47
-    if (!strcmp(s_device_name, "Pico") || !strcmp(s_device_name, "kiikoread")) strlcpy(s_device_name, "Metalio S31", sizeof(s_device_name));
-#else
     if (!strcmp(s_device_name, "Pico")) strlcpy(s_device_name, "kiikoread", sizeof(s_device_name));
-#endif
     value_len = sizeof(s_avatar);
     if (nvs_get_str(h, NVS_KEY_AVATAR, s_avatar, &value_len) != ESP_OK ||
         (s_avatar[0] && strncmp(s_avatar, "/sdcard/", 8))) s_avatar[0] = 0;
@@ -370,7 +323,8 @@ void app_settings_init(void) {
         (s_book_background[0] && strncmp(s_book_background, "/sdcard/pictures/", 17))) s_book_background[0] = 0;
     uint8_t reader_full_pages = 15;
     if (nvs_get_u8(h, NVS_KEY_READER_FULL, &reader_full_pages) == ESP_OK &&
-        reader_full_pages_valid(reader_full_pages))
+        (reader_full_pages == 0 || reader_full_pages == 5 || reader_full_pages == 10 ||
+         reader_full_pages == 15 || reader_full_pages == 30))
         s_reader_full_pages = reader_full_pages;
     uint8_t reader_turn_effect = 0;
     if (nvs_get_u8(h, NVS_KEY_READER_TURN, &reader_turn_effect) == ESP_OK && reader_turn_effect <= READER_TURN_EFFECT_MAX)
@@ -403,12 +357,6 @@ void app_settings_init(void) {
     uint8_t hide_images = 0, recent_sort = 0, ble_turner = 0, book_fonts = 1, book_vertical = 0;
     if (nvs_get_u8(h, NVS_KEY_HIDE_IMAGES, &hide_images) == ESP_OK) s_reader_hide_images = hide_images == 1;
     if (nvs_get_u8(h, NVS_KEY_BLE_TURNER, &ble_turner) == ESP_OK) s_ble_turner = ble_turner == 1;
-    uint8_t fast_charge = 1;
-    if (nvs_get_u8(h, NVS_KEY_FAST_CHARGE, &fast_charge) == ESP_OK) s_fast_charge = fast_charge != 0;
-#if KIIKO_BOARD_METALIO47
-    uint8_t ai_short=APP_AI_REFRESH;
-    s_ai_short=nvs_get_u8(h,"ai_short",&ai_short)==ESP_OK&&ai_short<APP_AI_ACTION_COUNT?(app_ai_action_t)ai_short:APP_AI_REFRESH;
-#endif
     s_shelf_order = 0;
     if (nvs_get_u8(h, NVS_KEY_SHELF_RECENT, &recent_sort) == ESP_OK) s_shelf_order = recent_sort < 8 ? recent_sort : 0;
     s_shelf_recent_sort = s_shelf_order == 1 || s_shelf_order == 3;
@@ -501,36 +449,11 @@ void app_settings_set_sleep_mode(app_sleep_mode_t mode) {
     nvs_close(h);
 }
 
-#if KIIKO_BOARD_METALIO47
-app_lock_sleep_mode_t app_settings_lock_sleep_mode(void) {
-    return s_sleep==APP_SLEEP_LIGHT?APP_LOCK_SLEEP_KEEP_LIGHT:
-        s_staged_shutdown?APP_LOCK_SLEEP_TIMED:APP_LOCK_SLEEP_OFF;
-}
-bool app_settings_keep_light_sleep(void) { return app_settings_lock_sleep_mode()==APP_LOCK_SLEEP_KEEP_LIGHT; }
-esp_err_t app_settings_set_lock_sleep_mode(app_lock_sleep_mode_t mode) {
-    if(mode<APP_LOCK_SLEEP_TIMED || mode>APP_LOCK_SLEEP_KEEP_LIGHT)return ESP_ERR_INVALID_ARG;
-    if(mode==app_settings_lock_sleep_mode())return ESP_OK;
-    nvs_handle_t h;esp_err_t err=nvs_open(NVS_NS,NVS_READWRITE,&h);
-    if(err!=ESP_OK)return err;
-    // 一个已存在的键保存三态；旧的0/1值保持含义，提交成功才更新当前策略。
-    // One existing key stores all three states; retain old0/1 values and update live policy only after commit.
-    uint8_t raw=mode==APP_LOCK_SLEEP_KEEP_LIGHT?2:mode==APP_LOCK_SLEEP_TIMED?1:0;
-    err=nvs_set_u8(h,NVS_KEY_SHUTDOWN_MODE,raw);
-    if(err==ESP_OK)err=nvs_commit(h);
-    nvs_close(h);
-    if(err==ESP_OK){s_sleep=mode==APP_LOCK_SLEEP_KEEP_LIGHT?APP_SLEEP_LIGHT:APP_SLEEP_DEEP;s_staged_shutdown=raw!=0;}
-    return err;
-}
-#endif
 bool app_settings_staged_shutdown(void) { return s_staged_shutdown; }
 void app_settings_set_staged_shutdown(bool staged) {
-#if KIIKO_BOARD_METALIO47
-    (void)app_settings_set_lock_sleep_mode(staged?APP_LOCK_SLEEP_TIMED:APP_LOCK_SLEEP_OFF);
-#else
     if (staged == s_staged_shutdown) return;
     s_staged_shutdown = staged;
     nvs_put_u8(NVS_KEY_SHUTDOWN_MODE, staged ? 1 : 0);
-#endif
 }
 uint8_t app_settings_wake_presses(void) { return s_wake_presses; }
 void app_settings_set_wake_presses(uint8_t presses) {
@@ -539,8 +462,8 @@ void app_settings_set_wake_presses(uint8_t presses) {
     s_wake_presses = presses;
     nvs_put_u8(NVS_KEY_WAKE_PRESSES, presses);
 }
-
-#if KIIKO_BOARD_METALIO47
+// 密码宽限期：档位码存储避免分钟值超出 u8；480/1440 装不进去。
+// PIN grace: the step code avoids minute values that no longer fit a u8.
 uint8_t app_settings_pin_grace_code(void) { return s_pin_grace_code_v; }
 void app_settings_set_pin_grace_code(uint8_t code) {
     if (code > 4) code = 0;
@@ -554,20 +477,12 @@ unsigned app_settings_pin_grace_minutes(void) {
 }
 uint32_t app_settings_pin_locked_at(void) { return s_pin_locked_at; }
 void app_settings_record_pin_lock(uint32_t unix_seconds) {
-    // 时钟无效清除旧记录，避免对时后复用旧宽限。/ Clear invalid-time records so later synchronization cannot reuse old grace.
-    if (unix_seconds < 1704067200 || unix_seconds > 4102444799U) unix_seconds = 0;
+    // 时钟无效不记录，判定端安全回落要密码。/ An invalid clock records nothing; the check falls back to the PIN.
+    if (unix_seconds < 1704067200) return;
     if (unix_seconds == s_pin_locked_at) return;
     s_pin_locked_at = unix_seconds;
     nvs_put_u32(NVS_KEY_PIN_LOCK_AT, unix_seconds);
 }
-static void nvs_put_u32(const char* key, uint32_t value) {
-    nvs_handle_t h;
-    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
-    nvs_set_u32(h, key, value);
-    nvs_commit(h);
-    nvs_close(h);
-}
-#endif
 
 app_home_component_t app_settings_home_component(void) { return s_home_component; }
 uint8_t app_settings_home_goal_minutes(void) { return s_home_goal_minutes; }
@@ -709,6 +624,14 @@ static void nvs_put_u8(const char* key, uint8_t value) {
     nvs_close(h);
 }
 
+static void nvs_put_u32(const char* key, uint32_t value) {
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_set_u32(h, key, value);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
 uint8_t app_settings_last_wake(void) {
     return s_last_wake;
 }
@@ -831,7 +754,8 @@ bool app_settings_set_book_background_path(const char *path) {
 
 uint8_t app_settings_reader_full_pages(void) { return s_reader_full_pages; }
 void app_settings_set_reader_full_pages(uint8_t pages) {
-    if (!reader_full_pages_valid(pages) || pages == s_reader_full_pages) return;
+    if ((pages != 0 && pages != 5 && pages != 10 && pages != 15 && pages != 30) ||
+        pages == s_reader_full_pages) return;
     s_reader_full_pages = pages;
     nvs_put_u8(NVS_KEY_READER_FULL, pages);
 }
@@ -859,7 +783,6 @@ bool app_settings_set_reader_default_fullscreen(bool on) {
     s_reader_default_fullscreen = on;
     return true;
 }
-bool app_settings_reader_immersive(void) { return s_reader_immersive; }
 bool app_settings_reader_equal_margins(void) { return s_reader_equal_margins; }
 bool app_settings_set_reader_equal_margins(bool on) {
     if(on==s_reader_equal_margins)return true;
@@ -872,6 +795,7 @@ bool app_settings_set_reader_equal_margins(bool on) {
     s_reader_equal_margins=on;
     return true;
 }
+bool app_settings_reader_immersive(void) { return s_reader_immersive; }
 void app_settings_set_reader_immersive(bool on) {
     if (s_reader_immersive == on) return;
     s_reader_immersive = on;
@@ -895,18 +819,6 @@ void app_settings_set_book_vertical(bool on) {
     s_book_vertical = on;
     nvs_put_u8(NVS_KEY_BOOK_VERTICAL, on ? 1 : 0);
 }
-#if KIIKO_BOARD_METALIO47
-app_ai_action_t app_settings_ai_short(void){return s_ai_short;}
-esp_err_t app_settings_set_ai_short(app_ai_action_t action){
-    if((unsigned)action>=APP_AI_ACTION_COUNT)return ESP_ERR_INVALID_ARG;
-    if(action==s_ai_short)return ESP_OK;
-    nvs_handle_t h;esp_err_t err=nvs_open(NVS_NS,NVS_READWRITE,&h);
-    if(err!=ESP_OK)return err;
-    err=nvs_set_u8(h,"ai_short",(uint8_t)action);
-    if(err==ESP_OK)err=nvs_commit(h);
-    nvs_close(h);if(err==ESP_OK)s_ai_short=action;return err;
-}
-#endif
 bool app_settings_ble_turner(void) { return s_ble_turner; }
 app_reader_key_action_t app_settings_reader_key_action(unsigned key) {
     return key < 3 ? (app_reader_key_action_t)s_reader_keys[key] : APP_READER_KEY_NONE;
@@ -972,17 +884,6 @@ void app_settings_set_ble_turner(bool on) {
     if (s_ble_turner == on) return;
     s_ble_turner = on;
     nvs_put_u8(NVS_KEY_BLE_TURNER, on ? 1 : 0);
-}
-bool app_settings_fast_charge(void) { return s_fast_charge; }
-void app_settings_set_fast_charge(bool on) {
-    if (on == s_fast_charge) return;
-    nvs_handle_t h;
-    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
-    esp_err_t err = nvs_set_u8(h, NVS_KEY_FAST_CHARGE, on ? 1 : 0);
-    if (err == ESP_OK) err = nvs_commit(h);
-    nvs_close(h);
-    // 写失败保留原值，UI 重绘仍显示实际生效的档位。/ Keep the old value on write failure so repaints show the active current.
-    if (err == ESP_OK) s_fast_charge = on;
 }
 bool app_settings_shelf_recent_sort(void) { return s_shelf_recent_sort; }
 uint8_t app_settings_shelf_order(void) { return s_shelf_order; }
@@ -1098,17 +999,10 @@ bool app_settings_set_fonts_dir(const char* path) { return set_media_dir(s_fonts
 #define BACKUP_PREVIOUS APP_SETTINGS_BACKUP_ROOT "/Kiikoread-settings.backup.previous"
 // 恢复顺序：统一名 → 本板旧名 → 另一板旧名；每个名字先主文件再 .previous。
 // Restore order: unified, this board's legacy, the other board's legacy; primary before .previous.
-#if KIIKO_BOARD_METALIO47
-#define BACKUP_LEGACY_OWN APP_SETTINGS_BACKUP_ROOT "/Metalio-S31-settings.backup"
-#define BACKUP_LEGACY_OWN_PREVIOUS APP_SETTINGS_BACKUP_ROOT "/Metalio-S31-settings.backup.previous"
-#define BACKUP_LEGACY_OTHER APP_SETTINGS_BACKUP_ROOT "/Pico-settings.backup"
-#define BACKUP_LEGACY_OTHER_PREVIOUS APP_SETTINGS_BACKUP_ROOT "/Pico-settings.backup.previous"
-#else
 #define BACKUP_LEGACY_OWN APP_SETTINGS_BACKUP_ROOT "/Pico-settings.backup"
 #define BACKUP_LEGACY_OWN_PREVIOUS APP_SETTINGS_BACKUP_ROOT "/Pico-settings.backup.previous"
 #define BACKUP_LEGACY_OTHER APP_SETTINGS_BACKUP_ROOT "/Metalio-S31-settings.backup"
 #define BACKUP_LEGACY_OTHER_PREVIOUS APP_SETTINGS_BACKUP_ROOT "/Metalio-S31-settings.backup.previous"
-#endif
 static const char *const BACKUP_RESTORE_FILES[] = {
     BACKUP_FILE, BACKUP_PREVIOUS,
     BACKUP_LEGACY_OWN, BACKUP_LEGACY_OWN_PREVIOUS,
@@ -1471,7 +1365,9 @@ static bool backup_valid(const settings_backup_v1_t *backup) {
         f[BK_SYS_SIZE] < 100 || f[BK_SYS_SIZE] > 200 || f[BK_SYS_SIZE] % 10 ||
         f[BK_SYS_CONTRAST] < 100 || f[BK_SYS_CONTRAST] > 140 || f[BK_SYS_CONTRAST] % 10 ||
         f[BK_LOCK] > 3 || f[BK_BOOK_PX] < BOOK_READER_PX_MIN || f[BK_BOOK_PX] > BOOK_READER_PX_MAX ||
-        f[BK_SHAKE] > 1 || !reader_full_pages_valid(f[BK_FULL_PAGES]) ||
+        f[BK_SHAKE] > 1 || (f[BK_FULL_PAGES] != 0 && f[BK_FULL_PAGES] != 5 &&
+                            f[BK_FULL_PAGES] != 10 && f[BK_FULL_PAGES] != 15 &&
+                            f[BK_FULL_PAGES] != 30) ||
         f[BK_TURN] > READER_TURN_EFFECT_MAX || f[BK_POWER_TURN] > 1 || f[BK_IMMERSIVE] > (backup_version(backup)>=23 ? 7 : backup_version(backup)>=22 ? 3 : 1) ||
         f[BK_TRACKING] > (backup_version(backup)>=20 ? APP_BOOK_TRACK_COUNT-1 : backup_version(backup)==19 ? 20 : 4) || f[BK_READING_LINE] > (backup_version(backup) >= 21 ? 5 : 2) ||
         f[BK_LINE_SPACING] < 110 || f[BK_LINE_SPACING] > 150 ||
@@ -1504,11 +1400,7 @@ static esp_err_t backup_apply_stream(FILE *file) {
     uint8_t indent = 2, rule_offset = 4, staged_shutdown = 0;
     settings_backup_indent_adjust_t adjust = {.encoded = 20};
     settings_backup_weight_t weight = {.encoded = 2};
-#if KIIKO_BOARD_METALIO47
-    settings_backup_profile_t profile = {.device_name = "Metalio S31"};
-#else
     settings_backup_profile_t profile = {.device_name = "kiikoread"};
-#endif
     settings_backup_keys_t keys = {.actions = {APP_READER_KEY_PREV, APP_READER_KEY_TOOLS, APP_READER_KEY_NEXT}};
     settings_backup_wifi_t wifi = {0};
     bool has_wifi = false;
@@ -1639,14 +1531,7 @@ static esp_err_t backup_apply_stream(FILE *file) {
     for (unsigned i = 0; i < 3 && err == ESP_OK; ++i) err = nvs_set_u8(h, s_reader_key_names[i], keys.actions[i]);
     if (err == ESP_OK) err = nvs_set_u8(h, NVS_KEY_HOLD_ACTION, hold.action);
     BACKUP_SET_U8(NVS_KEY_SLEEP, BK_SLEEP);
-#if KIIKO_BOARD_METALIO47
-    // 便携备份沿用已有sleep字段表示保持浅睡，不修改文件格式。
-    // Reuse the backup's existing sleep field for keep-light without changing its format.
-    if (err == ESP_OK) err = nvs_set_u8(h, NVS_KEY_SHUTDOWN_MODE,
-        backup.flags[BK_SLEEP]==APP_SLEEP_LIGHT?2:staged_shutdown&1);
-#else
     if (err == ESP_OK) err = nvs_set_u8(h, NVS_KEY_SHUTDOWN_MODE, staged_shutdown & 1);
-#endif
     uint8_t idle_values[] = {0, 1, 5, 10};
     uint8_t idle_minutes = idle_values[(staged_shutdown >> 1) & 3];
     if (err == ESP_OK) err = nvs_set_u8(h, NVS_KEY_AUTO_LOCK, idle_minutes);
