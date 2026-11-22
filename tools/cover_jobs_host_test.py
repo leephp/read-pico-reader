@@ -12,7 +12,7 @@ app_source=app_book.read_text()
 has_cover_warm='static void cover_warm_task(' in app_source
 has_sized_default_cache='book_cover_store_sized' in (root/'main/book/book_cover_jobs.c').read_text()
 view=root/'.kiiko-source-view.json'
-s31=json.loads(view.read_text())['board']=='metalio47' if view.exists() else True
+s31=json.loads(view.read_text())['board']=='metalio47' if view.exists() else False
 unit=f'#define KIIKO_BOARD_METALIO47 {int(s31)}\n#define TEST_SIZED_DEFAULT_CACHE {int(has_sized_default_cache)}\n'+r'''
 #include <assert.h>
 #include <stdio.h>

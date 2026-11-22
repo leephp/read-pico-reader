@@ -8,7 +8,7 @@ import tempfile
 root=Path(__file__).resolve().parents[1]
 source=(root/'components/read_pico/read_pico_board.c').read_text()
 def function(name):
-    m=re.search(r'^(?:static )?[^\n]+\b'+name+r'\([^;{}]*\)\s*\{',source,re.M)
+    m=re.search(r'^(?:static )?[A-Za-z_]\w*[ \t*]+'+name+r'\([^;{}]*\)\s*\{',source,re.M)
     assert m,name
     at,depth=m.end(),1
     while depth:
@@ -28,7 +28,9 @@ typedef int esp_err_t;
 #define BOARD_LCD_DE_SIG 0
 #define pdMS_TO_TICKS(n) (n)
 #define ESP_LOGE(...) ((void)0)
-#define ESP_LOGI(...) ((void)0)
+static void log_ignore(const char *tag,const char *fmt,...){(void)tag;(void)fmt;}
+#define ESP_LOGI(...) log_ignore(__VA_ARGS__)
+static int64_t esp_timer_get_time(void){return 0;}
 typedef struct {bool ep_mode,ep_output_enable;} epd_ctrl_state_t;
 typedef struct {int vcom_mv,temperature_c;} sy7636a_status_t;
 static uint8_t ioe_output,hardware;
@@ -45,12 +47,14 @@ static void esp_rom_gpio_connect_out_signal(int pin,int sig,bool invert,bool oen
 static int sy7636a_read(void *h,sy7636a_status_t *status){(void)h;(void)status;return -1;}
 static int sy7636a_power_on(void *h);
 static int sy7636a_power_off(void *h);
+static bool shutdown_failed;
+static bool sy7636a_rails_on(void *h){(void)h;return shutdown_failed;}
 """
 unit+='\n'.join(re.findall(r'^#define (?:IOE_MODE|IOE_XOE|IOE_SY_VCOM_EN|VCOM_SETTLE_US)\b.*',source,re.M))+'\n'
-for name in ['ioe_commit','ioe_set','board_set_ctrl','read_pico_epd_release_drive','board_poweron','board_poweroff']:unit+=function(name)+'\n'
+for name in ['ioe_commit','ioe_set','board_set_ctrl','read_pico_epd_release_drive','board_poweron','board_poweroff','read_pico_rails_on']:unit+=function(name)+'\n'
 unit+=r"""
 static int sy7636a_power_on(void *h){(void)h;if(power_error)return -1;return ioe_set(IOE_SY_VCOM_EN,true);}
-static int sy7636a_power_off(void *h){(void)h;return ioe_set(IOE_SY_VCOM_EN,false);}
+static int sy7636a_power_off(void *h){(void)h;if(shutdown_failed)return -1;return ioe_set(IOE_SY_VCOM_EN,false);}
 int main(void){
  epd_ctrl_state_t state={0},mode={.ep_mode=true},output={.ep_output_enable=true};
  current_state=&state;
@@ -87,6 +91,8 @@ int main(void){
  commit_error=false;assert(read_pico_epd_release_drive()&&!s_drive_release_retry);
  assert(!(hardware&(IOE_MODE|IOE_XOE|IOE_SY_VCOM_EN)));
  neutral_writes=writes;assert(read_pico_epd_release_drive()&&writes==neutral_writes);
+ shutdown_failed=true;board_poweroff(&state);assert(!rails_on&&read_pico_rails_on());
+ shutdown_failed=false;board_poweroff(&state);assert(!read_pico_rails_on());
  puts("PASS: idle/no-change drive release, zero redundant I2C and retry after failed neutral hardware writes");
  puts("PASS: VCOM follows masked ep_mode only with powered rails, each rising edge settles for 2 ms, failed power-on and power-off retain gating boundaries");
 }

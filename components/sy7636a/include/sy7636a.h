@@ -140,6 +140,7 @@ void sy7636a_i2c_end(sy7636a_handle_t h, bool woke);
 /// / Write VCOM / VLDO / delays, set ON_OFF, wait for PGOOD, then raise VCOM_EN.
 esp_err_t sy7636a_power_on(sy7636a_handle_t h);
 esp_err_t sy7636a_power_off(sy7636a_handle_t h);
+/// True also means a failed shutdown is pending; this is not a voltage measurement.
 bool sy7636a_rails_on(sy7636a_handle_t h);
 
 esp_err_t sy7636a_read(sy7636a_handle_t h, sy7636a_status_t* status);

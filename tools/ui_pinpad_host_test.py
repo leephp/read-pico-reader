@@ -135,7 +135,9 @@ int main(int argc,char **argv){
  (p/'test.c').write_text(unit)
  flags=['cc','-std=gnu11','-Wall','-Wextra','-Werror','-Wno-unused-variable','-Wno-unused-function','-Wno-missing-field-initializers','-fsanitize=address,undefined','-ffunction-sections','-fdata-sections','-I'+str(p),'-I'+str(ROOT/'main/ui'),'-I'+str(ROOT/'main/font'),'-I'+str(ROOT/'main')]
  subprocess.run(flags+['-c',str(ROOT/'main/font/ttf_font.c'),'-o',str(p/'ttf.o')],check=True)
- subprocess.run(flags+font_hanzi_host_sources(ROOT,p)+[str(p/'test.c'),str(p/'assets.c'),str(p/'ttf.o'),str(ROOT/'main/ui/ui_gesture.c'),str(ROOT/'main/ui/ui_image_dither.c'),'-Wl,-dead_strip','-lm','-o',str(p/'test')],check=True)
+ # 本测试提供可旋转几何，不能再链接固定几何替身。/ This test supplies rotating geometry; omit the fixed-geometry stub.
+ font_sources=[s for s in font_hanzi_host_sources(ROOT,p) if not s.endswith('/font-display-host.c')]
+ subprocess.run(flags+font_sources+[str(p/'test.c'),str(p/'assets.c'),str(p/'ttf.o'),str(ROOT/'main/ui/ui_gesture.c'),str(ROOT/'main/ui/ui_image_dither.c'),'-Wl,-dead_strip','-lm','-o',str(p/'test')],check=True)
  if args.background:
   from PIL import Image
   b=Image.open(args.background).convert('L');assert b.size==(684,1216);(p/'bg.raw').write_bytes(b.tobytes())

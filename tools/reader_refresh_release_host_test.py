@@ -40,7 +40,8 @@ static int E0470_WAVEFORM,E0470_FULL_WAVEFORM,E0470_FOLLOW_WAVEFORM;
 #define display_main_normal_waveform() (&E0470_WAVEFORM)
 #endif
 typedef int EpdWaveform;
-static int reader_waveform,soft_turn_waveform,white_waveform;
+static int reader_waveform,soft_turn_waveform,white_waveform,cleanup_waveform;
+static const int *display_reader_cleanup_waveform(void){return &cleanup_waveform;}
 static const int *display_main_gray_waveform(void){return &reader_waveform;}
 static const int *display_reader_soft_turn_waveform(void){return &soft_turn_waveform;}
 static bool s_reader_clock_pending,s_input_settle,s_shelf_feedback_pending,s_cover_batch_present_pending,s_shelf_page_pending;
@@ -126,6 +127,8 @@ for name in ('clip_refresh_rect','ui_rect_union'):
 unit+='\n'.join(line for line in (root/'main/ui/ui_reader_layout.h').read_text().splitlines() if not line.startswith(('#include','#pragma'))) + '\n'
 for name in ('reader_area','reader_fullscreen_progress_area','progress_rect'):
  unit+=function(name,root/'main/apps/app_book.c')+'\n'
+unit+='static int s_reader_slider;\nstatic void invalidate_prep(void);\n'
+unit+=function('reader_manual_refresh',root/'main/apps/app_book.c')+'\n'
 unit+=function('present',root/'main/apps/app_book.c')
 
 unit+=r"""
@@ -200,11 +203,32 @@ int main(void){
   reset();s_reader_fullscreen=full;s_reader_cleanup=true;s_area=reader_area();
   s_reader_image_refresh_pending=image;images=image;
   assert(present(&ctx,APP_REDRAW_AREA));assert(calls==1&&selected==14&&s_reader_text_frame==!image);
-  assert(modes[0]==MODE_GC16&&waves[0]==&E0470_FULL_WAVEFORM);
+  assert(modes[0]==MODE_GC16&&waves[0]==&cleanup_waveform);
   same_area(areas[0],reader_area());
   assert(!s_reader_cleanup&&!s_reader_turn_pending&&footer_commits==1);
  }
- reset();s_reader_turn_pending=false;present(&ctx,APP_REDRAW_FULL);assert(calls==1&&selected==12&&rendered==1);
+ // Periodic cleanup without metadata separation still uses the augmented full-frame route.
+ reset();s_reader_cleanup=true;present(&ctx,APP_REDRAW_PAGE);
+ assert(calls==1&&waves[0]==&cleanup_waveform&&modes[0]==MODE_GC16&&s_turns==0);
+ same_area(areas[0],(EpdRect){0,0,684,1216});
+ // Explicit cleanup must drive unchanged pixels with the complete native GC16 for every reader target.
+ for(int content=0;content<3;++content)for(int pending=0;pending<2;++pending){
+  reset();images=content==1;background=content==2;s_reader_image_refresh_pending=images;
+  s_reader_cleanup=pending;s_reader_turn_pending=false;
+  present(&ctx,APP_REDRAW_FULL);
+  assert(calls==1&&selected==14&&rendered==1&&waves[0]==&E0470_FULL_WAVEFORM&&modes[0]==MODE_GC16);
+  same_area(areas[0],(EpdRect){0,0,684,1216});assert(s_turns==0);
+ }
+ reset();s_turns=15;fail=1;
+ app_redraw_t manual=reader_manual_refresh(&ctx);assert(manual==APP_REDRAW_FULL&&s_turns==15);
+ present(&ctx,manual);assert(s_turns==15);
+ fail=0;calls=0;present(&ctx,reader_manual_refresh(&ctx));assert(s_turns==0);
+ // A failed periodic cleanup retains the due count; only successful cleanup acknowledges it.
+ reset();s_reader_cleanup=true;s_turns=15;fail=1;present(&ctx,APP_REDRAW_AREA);
+ assert(s_turns==15&&!s_reader_text_frame);
+ fail=0;calls=0;s_reader_cleanup=true;present(&ctx,APP_REDRAW_AREA);assert(s_turns==0);
+ reset();s_view=s_presented_view=SHELF;s_reader_turn_pending=false;
+ present(&ctx,APP_REDRAW_FULL);assert(calls==1&&selected==12);
  reset();s_reader_turn_pending=false;present(&ctx,APP_REDRAW_PAGE);assert(calls==1&&selected==13&&rendered==1);
  reset();fail=1;s_reader_footer_pending=false;
  present(&ctx,APP_REDRAW_AREA);assert(calls==1&&selected==14&&!s_reader_text_frame&&!s_reader_footer_pending);

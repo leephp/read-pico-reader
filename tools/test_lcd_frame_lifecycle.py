@@ -37,7 +37,7 @@ typedef struct {
 } RenderContext_t;
 static RenderContext_t *active;
 static frame_done_func_t done_cb;
-static int notifications, joins, phases, mode, failure,aborts;
+static int notifications, joins, phases, mode, failure,aborts,fail_at;
 static int s_prefill_lines=128;
 static int64_t clock_us;
 static int64_t esp_timer_get_time(void){clock_us+=500;return clock_us;}
@@ -56,16 +56,17 @@ static void prepare_context_for_next_frame(RenderContext_t *ctx) {
 static void xTaskNotifyGive(int task) {(void)task; notifications++;}
 static int xSemaphoreTake(int sem, int timeout) {
  (void)timeout;
+ int fault=phases==fail_at?failure:0;
  if (sem == 10) {
   if(!timeout)return pdFALSE;
-  if(failure==3)return pdFALSE;
-  active->lines_consumed = failure == 1 ? 676 : 688;
-  if (failure == 2) active->error = EPD_DRAW_EMPTY_LINE_QUEUE;
+  if(fault==3)return pdFALSE;
+  active->lines_consumed = fault == 1 ? 676 : 688;
+  if (fault == 2) active->error = EPD_DRAW_EMPTY_LINE_QUEUE;
   active->line_queues[0]=(LineQueue_t){11,12};
   active->line_queues[1]=(LineQueue_t){39,40};
-  if (!failure) active->line_queues[0]=active->line_queues[1]=(LineQueue_t){5,5};
+  if (!fault) active->line_queues[0]=active->line_queues[1]=(LineQueue_t){5,5};
   assert(done_cb); done_cb(active);
- } else { joins++;if(failure==4&&sem==11)return pdFALSE; }
+ } else { joins++;if(fault==4&&sem==11)return pdFALSE; }
  return pdTRUE;
 }
 static void lq_reset(LineQueue_t *q) {
@@ -77,8 +78,14 @@ s31 = 'EPD_MIN_PHASE_US' in production
 harness += f'\n#define HAS_S31_TIMEOUTS {int(s31)}\n'
 tests = r'''
 int main(void) {
+ const int lengths[]={36,41,48,53,64};
+ unsigned checks=0;
+ for(unsigned n=0;n<sizeof(lengths)/sizeof(lengths[0]);++n)
+ for(int skip=0;skip<=3;skip+=3)
+ for(int when=0;when<3;++when)
  for (failure=0; failure<(HAS_S31_TIMEOUTS?5:3); failure++) {
-  RenderContext_t ctx={.lines_total=688,.cycle_frames=36,.frame_done=10,
+  int count=lengths[n]-skip;fail_at=when==0?1:when==1?count/2:count;
+  RenderContext_t ctx={.lines_total=688,.cycle_frames=count,.current_frame=skip,.frame_done=10,
    .feed_done_smphr={11,12},.feed_tasks={0,1}};
   notifications=joins=phases=aborts=0;
   lcd_do_update(&ctx);
@@ -86,12 +93,15 @@ int main(void) {
   assert(aborts==(failure==3));
   if (failure) {
    assert(ctx.error & EPD_DRAW_EMPTY_LINE_QUEUE);
-   assert(phases==1 && notifications==2 && joins==2);
+   assert(phases==fail_at && notifications==2*fail_at && joins==2);
+   assert(ctx.current_frame==skip+fail_at-1);
    assert(ctx.line_queues[0].current==ctx.line_queues[0].last);
    assert(ctx.line_queues[1].current==ctx.line_queues[1].last);
-  } else assert(!ctx.error && phases==36 && ctx.current_frame==36);
+  } else assert(!ctx.error && phases==count && ctx.current_frame==lengths[n]);
+  ++checks;
  }
- puts("LCD lifecycle PASS: incomplete scan, underrun, join-before-reset, normal phases and S31 DMA/feed timeouts");
+ printf("PASS: %u phase lifecycle scenarios; 36/41/48/53/64 phases, leading offset, first/middle/final failure, no false success or tail truncation\n",checks);
+ puts("LCD lifecycle PASS: incomplete scan, underrun, join-before-reset, normal phases (S31-only timeouts when supported)");
 }
 '''
 out = root / 'build/book-tests'

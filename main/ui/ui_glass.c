@@ -108,6 +108,15 @@ static void panel_row_h(const uint8_t *source, int w, int row, uint8_t *dst,cons
     const uint8_t *pixels = source + (size_t)row * w;
     for (int x = 0; x < w; ++x) {
         int sum = 0;
+        // 两套核均对称；内部像素合并成对乘法，不再逐抽头检查边界。
+        // Both kernels are symmetric: pair interior taps and avoid per-tap boundary checks.
+        if (x >= GAUSS_RADIUS && x < w - GAUSS_RADIUS) {
+            sum = kernel[0] * (pixels[x - 3] + pixels[x + 3]) +
+                  kernel[1] * (pixels[x - 2] + pixels[x + 2]) +
+                  kernel[2] * (pixels[x - 1] + pixels[x + 1]) + kernel[3] * pixels[x];
+            dst[x] = (uint8_t)(sum >> 8);
+            continue;
+        }
         for (int k = 0; k < GAUSS_TAPS; ++k) {
             int sx = x + k - GAUSS_RADIUS;
             if (sx < 0) sx = 0; else if (sx >= w) sx = w - 1;

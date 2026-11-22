@@ -118,6 +118,10 @@ int main(void) {
     assert(epub_chapter_lead(&t, "合欢树", heading, sizeof(heading), number, sizeof(number)) == 0);
     assert(!heading[0] && !number[0]);
     t.blocks[0].authored_heading_layout = false;
+    // Raw parser output alone is not a verified body heading.
+    assert(epub_chapter_lead(&t, "合欢树", heading, sizeof(heading), number, sizeof(number)) == 0);
+    assert(!heading[0] && !number[0]);
+    t.blocks[0].reader_heading = true;
     assert(epub_chapter_lead(&t, "合欢树", heading, sizeof(heading), number, sizeof(number)) == t.blocks[1].offset);
     assert(!strcmp(heading,"合 欢 树") && !number[0]);
     html_text_free(&t);

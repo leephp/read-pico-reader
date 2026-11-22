@@ -16,7 +16,7 @@ ROOT=Path(__file__).resolve().parents[1]
 book=ROOT/'main/apps/app_book.c'
 kit=ROOT/'main/ui/ui_kit.c'
 s=book.read_text()
-unit=r'''
+unit = '#include \"' + str(ROOT / 'main/ui/ui_text_fit.h') + '\"\n' + r'''
 #include <assert.h>
 #include <stdint.h>
 #include <stdbool.h>

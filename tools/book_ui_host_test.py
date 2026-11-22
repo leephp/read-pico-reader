@@ -144,7 +144,8 @@ static bool shelf_waiting_for_index(void);
 static int shelf_order_mode(void);
 static bool shelf_order_desc(void);
 static bool s_shelf_index_preloaded;
-static void shelf_cache_save(void){}
+static unsigned shelf_cache_saves;
+static void shelf_cache_save(void){++shelf_cache_saves;}
 static bool s_shelf_scan_cancelled,s_shelf_scan_yield_to_touch,s_background_index_scan;
 static int64_t s_shelf_input_ms;
 static bool shelf_scan_interrupted(app_ctx_t *ctx){(void)ctx;return false;}
@@ -503,7 +504,8 @@ static bool shelf_cache_load(app_ctx_t *ctx,bool mount){(void)ctx;(void)mount;re
 static void cover_lookup_cleanup(void){}
 static void rc_stop_auto(void){}
 static bool px_settle_flush(app_ctx_t *ctx){(void)ctx;return false;}
-static void app_settings_set_book_layout(uint8_t px,uint8_t margin,uint8_t line,uint8_t para){(void)px;app_settings_set_book_margin(margin);app_settings_set_book_line_spacing(line);app_settings_set_book_paragraph_spacing(para);}
+static bool test_layout_save_fail;
+static void app_settings_set_book_layout(uint8_t px,uint8_t margin,uint8_t line,uint8_t para){if(test_layout_save_fail)return;(void)px;app_settings_set_book_margin(margin);app_settings_set_book_line_spacing(line);app_settings_set_book_paragraph_spacing(para);}
 
 static bool app_settings_try_shelf_order(unsigned n){app_settings_set_shelf_order(n);return true;}
 '''
@@ -516,7 +518,7 @@ for name in ("inline_ink_gray", "reader_margin_width", "reader_margin_levels", "
 for name in ("book_remote_direction", "shelf_turn_page", "shelf_page_arrow_rect", "reader_swipe_direction"):
     unit += function(name) + "\n"
 unit += "static unsigned app_settings_system_font_size(void){return 100;}\n"
-for name in ("apply_reader_layout", "reader_ui_extra", "reader_slider_rect", "reader_slider_map", "reader_slider_begin", "reader_slider_move", "reader_slider_commit"):
+for name in ("reader_restore_saved_layout", "apply_reader_layout", "reader_ui_extra", "reader_slider_rect", "reader_slider_map", "reader_slider_begin", "reader_slider_move", "reader_slider_commit"):
     unit += function(name) + "\n"
 unit += r'''
 int main(void) {
@@ -617,6 +619,13 @@ int main(void) {
         assert(s_margin==margin&&test_saved_margin==margin&&test_reflows==before+1&&s_page==2);
         assert(test_reflow_rect.width==reader_margin_width(margin,48,0));
     }
+    test_layout_save_fail=true;
+    int saved_margin=app_settings_book_margin();
+    assert(apply_reader_layout(&margin_ctx,48,saved_margin?0:24,130,50)==APP_REDRAW_PAGE);
+    assert(s_margin==saved_margin&&strstr(s_reader_notice,"保存失败"));
+    test_layout_save_fail=false;
+    assert(apply_reader_layout(&margin_ctx,48,saved_margin?0:24,130,50)==APP_REDRAW_PAGE);
+    assert(s_margin==app_settings_book_margin());
     assert(apply_reader_layout(&margin_ctx,48,-1,130,50)==APP_REDRAW_NONE);
     assert(apply_reader_layout(&margin_ctx,48,49,130,50)==APP_REDRAW_NONE);
     s_margin=test_saved_margin=24;s_reader_slider_endpoint=false;
@@ -630,6 +639,11 @@ int main(void) {
     s_margin=test_saved_margin=24;test_reflow_failures=1;
     assert(apply_reader_layout(&margin_ctx,48,0,130,50)==APP_REDRAW_NONE);
     assert(s_margin==24&&test_saved_margin==24&&!test_draw_locked);
+    {void *prior_text=s_text;int prior_view=s_view;
+     test_reflow_failures=2;s_view=READING;
+     assert(apply_reader_layout(&margin_ctx,48,0,130,50)==APP_REDRAW_PAGE);
+     assert(!s_text&&s_view==SHELF&&s_margin==24&&test_saved_margin==24&&!test_draw_locked);
+     s_text=prior_text;s_view=prior_view;}
     s_margin=test_saved_margin=36;s_page=0;test_reflows=0;
     reader_bookmarks_t marks={.count=6};
     for(unsigned i=0;i<marks.count;++i)marks.entries[i].byte_off=(i+1)*100;
@@ -822,8 +836,25 @@ int main(void) {
     EpdRect filter=bulk_filter_rect(1);assert(filter.y==240&&filter.height==54);
     s_view=MANAGE;manage_action(&ctx,circle.x+20,circle.y+20);assert(s_view==SHELF);
     assert(!strcmp(s_shelf[0].name,"book000")&&!strcmp(s_shelf[64].name,"book064"));
-    test_degraded=true;scan_shelf(&ctx);assert(s_count==65&&s_shelf_warning[0]);test_degraded=false;
-    test_root_count=2;strcpy(test_roots[1].path,"/nonexistent-book-root");scan_shelf(&ctx);assert(s_count==65&&s_shelf_warning[0]);test_root_count=1;
+    shelf_entry_t *retained_shelf=s_shelf;
+    size_t retained_capacity=s_shelf_capacity;
+    shelf_entry_t retained_entries[65];memcpy(retained_entries,s_shelf,sizeof(retained_entries));
+    int retained_leaf=ctx.leaf;
+    unsigned retained_cache_saves=shelf_cache_saves;
+    test_degraded=true;scan_shelf(&ctx);
+    assert(s_shelf==retained_shelf&&s_count==65&&s_visible_count==65&&s_scan_pending&&s_shelf_warning[0]);test_degraded=false;
+    test_root_count=2;strcpy(test_roots[1].path,"/nonexistent-book-root");scan_shelf(&ctx);
+    assert(s_shelf==retained_shelf&&s_count==65&&s_scan_pending&&s_shelf_warning[0]);test_root_count=1;
+    char retained_root[sizeof(test_roots[0].path)];strcpy(retained_root,test_roots[0].path);
+    strcpy(test_roots[0].path,"/nonexistent-book-root");scan_shelf(&ctx);
+    assert(s_shelf==retained_shelf&&s_shelf_capacity==retained_capacity&&s_count==65&&s_visible_count==65);
+    assert(!memcmp(s_shelf,retained_entries,sizeof(retained_entries))&&ctx.leaf==retained_leaf&&s_scan_pending);
+    assert(strstr(s_shelf_warning,"保留已加载书架"));
+    assert(shelf_cache_saves==retained_cache_saves);
+    strcpy(test_roots[0].path,retained_root);s_scan_pending=false;scan_shelf(&ctx);
+    assert(s_count==65&&s_visible_count==65&&!s_shelf_warning[0]&&!s_scan_pending);
+    assert(shelf_cache_saves==retained_cache_saves+1);
+    puts("PASS: degraded/partial/missing-root rescans retain exact shelf and page; recovered root replaces warning on successful retry");
     free(s_shelf);s_shelf=NULL;s_shelf_capacity=0;s_count=0;test_oom=true;scan_shelf(&ctx);assert(s_count==0&&s_shelf_warning[0]);test_oom=false;
     strcpy(s_path,"/sdcard/books/a.txt");s_text="text";s_page=1;s_unsaved=8;
     assert(pending_reserve(s_path));pending_mark_latest(s_path);test_save_error=-1;save_progress();
@@ -943,7 +974,7 @@ int main(void) {
     s_turns=4;s_du_count=2;
     assert(on_key_long(&ctx,UI_KEY_2)==APP_REDRAW_FULL&&test_nav_target==-1&&s_view==READING);
     assert(s_reader_fullscreen&&s_reader_panel==READER_PANEL_NONE&&s_reader_slider==-1);
-    assert(!s_reader_footer_pending&&!s_reader_image_refresh_pending&&!s_water_turn_pending&&!s_reader_cleanup&&!s_turns&&!s_du_count);
+    assert(!s_reader_footer_pending&&!s_reader_image_refresh_pending&&!s_water_turn_pending&&!s_reader_cleanup&&s_turns==4&&!s_du_count);
     test_hold_refresh=false;s_reader_return_home=false;
     s_reader_panel=READER_PANEL_TOOLS;s_page=1;
     assert(apply_reader_option(&ctx,0)==APP_REDRAW_PAGE&&test_power_turn);

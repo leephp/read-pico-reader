@@ -33,7 +33,21 @@ def generate(table):
 '''
     result+='#define SEARCH_PACKED_COUNT '+str(len(cps))+'u\n'
     result+='// Source SHA256: '+hashlib.sha256(table.read_bytes()).hexdigest()+'\n'
-    for name,items in [('codepoints',cps),('groups',groups)]:
+    # Independent blocks retain O(1) random access without a decode buffer.
+    block=64;data=bytearray();bases=[];offsets=[];widths=[]
+    for start in range(0,len(cps),block):
+        items=cps[start:start+block];base=items[0]
+        bits=max(1,(items[-1]-base).bit_length())
+        bases.append(base);offsets.append(len(data));widths.append(bits)
+        data.extend(packed([value-base for value in items],bits)[:-3])
+    assert len(data)<65536
+    data.extend(b'\0'*3)
+    result+='#define SEARCH_CODEPOINT_BLOCK 64u\n'
+    for name,ctype,items in [('bases','uint32_t',bases),('offsets','uint16_t',offsets),('widths','uint8_t',widths),('deltas','uint8_t',data)]:
+        result+='static const '+ctype+' search_cp_'+name+'[] = {\n'
+        result+=''.join('    '+','.join(str(x) for x in items[i:i+24])+',\n' for i in range(0,len(items),24))
+        result+='};\n'
+    for name,items in [('groups',groups)]:
         bits=max(items).bit_length();data=packed(items,bits)
         result+='#define SEARCH_PACKED_'+name.upper()+'_BITS '+str(bits)+'u\n'
         result+='static const uint8_t search_packed_'+name+'[] = {\n'

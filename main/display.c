@@ -111,6 +111,9 @@ void rails_idle_check(int64_t now_ms) {
         rails_deadline_ms = 0;
         drive_release_retry_ms = 0;
         epd_poweroff();
+        // 总线失败保留重试，不重新扫描；从返回时刻起至少等待一秒。
+        // Retain a failed shutdown without rescanning; wait at least one second after return.
+        if (read_pico_rails_on()) rails_deadline_ms = esp_timer_get_time() / 1000 + 1000;
     }
     pico_online_display_end(held);
 }

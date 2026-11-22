@@ -4,6 +4,8 @@
 """检查 SVG 线段坐标与固件成品掩模。/ Check SVG line coordinates and firmware masks."""
 import importlib.util
 import re
+import subprocess
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,9 +34,45 @@ assert alpha(saved, 36, 9) >= 14  # 顶边保留。/ Retain the outer top edge.
 # 检查实际编译头文件，防止只改 SVG 却忘记更新成品。
 # Inspect the compiled header too, catching stale generated artwork.
 header = icons.HEADER.read_text()
-blocks = re.findall(r'\{([^{}]+)\}', header[header.index('static const uint8_t ui_icon_masks'):])
-assert len(blocks) == len(icons.ICONS)
-for name, block in zip(icons.ICONS, blocks):
-    actual = bytes.fromhex(''.join(re.findall(r'0x([0-9a-fA-F]{2})', block)))
-    assert actual == bytes(icons.pack_4bpp(icons.render_icon(name))), name
-print(f"PASS: SVG numeric coordinates, visible bookmark plus, no corner dot, {len(blocks)} generated masks")
+expected = b''.join(bytes(icons.pack_4bpp(icons.render_icon(name))) for name in icons.ICONS)
+# 实际 C 解码器须与原始掩模逐字节一致；故障输入不得越界。
+# The actual C decoder must reproduce every mask byte; malformed inputs must remain bounded.
+code = r'''
+#include <assert.h>
+#include <stdio.h>
+#include "main/assets/ui_icons.h"
+int main(void) {
+    uint8_t out[UI_ICON_MASK_BYTES];
+    for (int i = 0; i < UI_ICON_COUNT; ++i) {
+        assert(ui_icon_decode((ui_icon_t)i, out));
+        assert(fwrite(out, 1, sizeof(out), stdout) == sizeof(out));
+    }
+    assert(!ui_icon_decode((ui_icon_t)-1, out));
+    assert(!ui_icon_decode(UI_ICON_COUNT, out));
+    const uint8_t repeat[] = {255, 0x5a}, literal[] = {1, 0x12, 0x34};
+    assert(ui_icon_rle_decode(repeat, sizeof(repeat), out, 128));
+    for (int i = 0; i < 128; ++i) assert(out[i] == 0x5a);
+    assert(ui_icon_rle_decode(literal, sizeof(literal), out, 2));
+    assert(out[0] == 0x12 && out[1] == 0x34);
+    assert(!ui_icon_rle_decode(repeat, 1, out, 128));
+    assert(!ui_icon_rle_decode(repeat, 2, out, 127));
+    assert(!ui_icon_rle_decode(repeat, 2, out, 129));
+    assert(!ui_icon_rle_decode(literal, 2, out, 2));
+    assert(!ui_icon_rle_decode(NULL, 0, out, 0));
+    assert(!ui_icon_rle_decode(literal, 3, NULL, 2));
+    return 0;
+}
+'''
+with tempfile.TemporaryDirectory() as folder:
+    source = Path(folder) / 'icons.c'
+    executable = Path(folder) / 'icons'
+    source.write_text(code)
+    subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+                    '-fsanitize=address,undefined', '-I', str(ROOT), str(source), '-o', str(executable)], check=True)
+    assert subprocess.check_output([str(executable)]) == expected
+    original_header = icons.HEADER
+    icons.HEADER = Path(folder) / 'generated.h'
+    icons.emit_header({name: icons.pack_4bpp(icons.render_icon(name)) for name in icons.ICONS})
+    assert icons.HEADER.read_text() == header, 'stale compressed header'
+    icons.HEADER = original_header
+print(f"PASS: SVG coordinates, {len(icons.ICONS)} byte-identical decoded masks, bounded C decoder, reproducible header")

@@ -50,6 +50,7 @@ struct sy7636a_dev_t {
     bool last_ok;
     bool rails;
     bool en_on;
+    bool off_pending;
 };
 
 static bool gpio_ok(gpio_num_t gpio) {
@@ -267,7 +268,10 @@ esp_err_t sy7636a_init(i2c_master_bus_handle_t bus_handle, const sy7636a_config_
 
 esp_err_t sy7636a_deinit(sy7636a_handle_t h) {
     if (h == NULL) return ESP_OK;
-    if (h->rails) (void)sy7636a_power_off(h);
+    if (h->rails || h->off_pending) {
+        esp_err_t err = sy7636a_power_off(h);
+        if (err != ESP_OK) return err;
+    }
     if (h->dev) i2c_master_bus_rm_device(h->dev);
     free(h);
     return ESP_OK;
@@ -287,12 +291,17 @@ esp_err_t sy7636a_i2c_begin(sy7636a_handle_t h, bool* woke) {
 
 void sy7636a_i2c_end(sy7636a_handle_t h, bool woke) {
     if (h == NULL || !woke || h->rails) return;
-    (void)set_en(h, false);
-    h->en_on = false;
+    esp_err_t err = set_en(h, false);
+    if (err == ESP_OK) h->en_on = false;
+    else h->off_pending = true;
 }
 
 esp_err_t sy7636a_power_on(sy7636a_handle_t h) {
     if (h == NULL) return ESP_ERR_INVALID_ARG;
+    if (h->off_pending) {
+        esp_err_t err = sy7636a_power_off(h);
+        if (err != ESP_OK) return err;
+    }
     if (h->rails) return ESP_OK;
 
     bool woke = false;
@@ -329,7 +338,7 @@ esp_err_t sy7636a_power_on(sy7636a_handle_t h) {
         uint8_t fault = 0xFF;
         (void)read_reg(h, REG_FAULT, &fault);
         ESP_LOGE(TAG, "PGOOD timeout, fault=0x%02X", fault);
-        (void)write_reg(h, REG_OPERATION, 0x00);
+        (void)write_reg(h, REG_OPERATION, pack_op(&h->cfg, false));
         vTaskDelay(pdMS_TO_TICKS(150));
         sy7636a_i2c_end(h, true);
         return ESP_ERR_TIMEOUT;
@@ -337,7 +346,7 @@ esp_err_t sy7636a_power_on(sy7636a_handle_t h) {
 
     err = set_vcom_en(h, true);
     if (err != ESP_OK) {
-        (void)write_reg(h, REG_OPERATION, 0x00);
+        (void)write_reg(h, REG_OPERATION, pack_op(&h->cfg, false));
         sy7636a_i2c_end(h, true);
         return err;
     }
@@ -349,18 +358,35 @@ esp_err_t sy7636a_power_on(sy7636a_handle_t h) {
 
 esp_err_t sy7636a_power_off(sy7636a_handle_t h) {
     if (h == NULL) return ESP_ERR_INVALID_ARG;
-    (void)set_vcom_en(h, false);
-    if (h->en_on) (void)write_reg(h, REG_OPERATION, 0x00);
+    const int64_t begin_us = esp_timer_get_time();
+    esp_err_t gate_err = set_vcom_en(h, false);
+    const int64_t gate_us = esp_timer_get_time();
+    // 只清 ON_OFF；放电期间保持 VCOM 门控方式和各轨放电配置。
+    // Clear only ON_OFF; retain VCOM control and discharge settings while rails decay.
+    const bool op_written = h->en_on;
+    esp_err_t op_err = op_written ? write_reg(h, REG_OPERATION, pack_op(&h->cfg, false)) : ESP_OK;
+    const int64_t op_us = esp_timer_get_time();
     vTaskDelay(pdMS_TO_TICKS(h->poweroff_hold_ms));
-    (void)set_en(h, false);
-    h->en_on = false;
-    h->rails = false;
-    ESP_LOGI(TAG, "rails off");
-    return ESP_OK;
+    // 前一步失败仍尝试 EN 兜底，但不能把未确认的关电报告为成功。
+    // Still attempt EN after earlier failures; never report an unconfirmed shutdown as successful.
+    esp_err_t en_err = set_en(h, false);
+    const int64_t en_us = esp_timer_get_time();
+    if (en_err == ESP_OK) {
+        h->en_on = false;
+        h->rails = false;
+    }
+    esp_err_t err = gate_err != ESP_OK ? gate_err : op_err != ESP_OK ? op_err : en_err;
+    h->off_pending = err != ESP_OK;
+    ESP_LOGI(TAG, "poweroff command us begin=%lld gate=%lld op=%lld en=%lld rc=%d/%d/%d op_written=%d",
+             (long long)begin_us, (long long)gate_us, (long long)op_us, (long long)en_us,
+             (int)gate_err, (int)op_err, (int)en_err, op_written);
+    if (err == ESP_OK) ESP_LOGI(TAG, "rails off");
+    else ESP_LOGE(TAG, "rails off unconfirmed: %s", esp_err_to_name(err));
+    return err;
 }
 
 bool sy7636a_rails_on(sy7636a_handle_t h) {
-    return h != NULL && h->rails;
+    return h != NULL && (h->rails || h->off_pending);
 }
 
 esp_err_t sy7636a_read(sy7636a_handle_t h, sy7636a_status_t* status) {

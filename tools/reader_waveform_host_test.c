@@ -63,6 +63,19 @@ static void test_fast_target(void) {
 int main(void) {
     e0470_waveform_init();
     test_fast_target();
+    const EpdWaveformPhases* base_gc = e0470_waveform_phases(&E0470_FULL_WAVEFORM, MODE_GC16);
+    uint8_t saved_gc[48*16*4]; assert(base_gc && base_gc->phases==48);
+    memcpy(saved_gc,base_gc->luts,sizeof(saved_gc));
+    const EpdWaveform* cleanup=display_reader_cleanup_waveform();
+    const EpdWaveformPhases* cp=e0470_waveform_phases(cleanup,MODE_GC16);
+    assert(cleanup==display_reader_cleanup_waveform() && cp && cp->phases==64 && !cp->phase_times);
+    assert(cleanup->temp_intervals==E0470_FULL_WAVEFORM.temp_intervals);
+    assert(!memcmp(cp->luts,saved_gc,sizeof(saved_gc)));
+    for(int from=0;from<16;++from)for(int to=0;to<16;++to)for(int f=48;f<64;++f)
+        assert(e0470_phase_action(cp,f,to,from)==(f<60?(to==15?2:0):(to==0?1:0)));
+    assert(!memcmp(base_gc->luts,saved_gc,sizeof(saved_gc)));
+    puts("PASS: periodic GC16 keeps all 48 native phases, adds exactly white12 then black4, holds all midgrays; original table unchanged");
+
     const EpdWaveformPhases* old = e0470_waveform_phases(&E0470_TEXTTURN_WAVEFORM, MODE_GL16);
     uint8_t saved[E0470_GL16_FRAMES * 16 * 4];
     assert(old && old->phases == E0470_GL16_FRAMES && !old->phase_times);

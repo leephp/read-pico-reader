@@ -1,4 +1,4 @@
-"""Run actual cross-slot glyph eviction against constrained/fragmented PSRAM."""
+"""Run the current Pico shared glyph-cache budget and preserve font/slot identity."""
 from pathlib import Path
 import subprocess,tempfile
 from home_cover_cache_host_test import function
@@ -10,6 +10,7 @@ unit=r'''
 #include <stdlib.h>
 #include <stdio.h>
 #include "cache_memory.h"
+#define ESP_LOGI(...) ((void)0)
 #define TTF_FONT_SLOTS 4
 #define TTF_CACHE_BUCKETS 256
 #define TTF_CACHE_LIMIT (1024u*1024u)
@@ -17,7 +18,7 @@ unit=r'''
 typedef struct glyph_entry {uint32_t codepoint;uint8_t size;void *bitmap;size_t bitmap_bytes;
  uint64_t cache_tick;struct glyph_entry *hash_next,*lru_prev,*lru_next;}glyph_entry_t;
 typedef struct {bool f_ready;glyph_entry_t *f_cache_buckets[256],*f_lru_head,*f_lru_tail;size_t f_cache_bytes;}slot_t;
-static slot_t s_slots[4],*s_cur=&s_slots[0];static int s_cur_index;static uint64_t s_cache_tick;static size_t s_cache_total;
+static slot_t s_slots[4],*s_cur=&s_slots[0];static int s_cur_index;static size_t s_cache_total;
 static size_t available=8u*1024u*1024u,largest=8u*1024u*1024u;
 void *heap_caps_malloc(size_t n,unsigned c){assert(c==3);return malloc(n);}
 void *heap_caps_calloc(size_t n,size_t m,unsigned c){assert(c==3);return calloc(n,m);}
@@ -29,7 +30,7 @@ static void heap_caps_free(void *p){free(p);}
 #define cache_buckets (s_cur->f_cache_buckets)
 #define cache_bytes (s_cur->f_cache_bytes)
 '''
-for name in ['cache_bucket','lru_detach','lru_touch','cache_evict_one','cache_reserve']:unit+=function(name,src)+'\n'
+for name in ['cache_bucket','lru_detach','lru_touch','cache_reset','cache_clear_all','cache_evict_one','cache_reserve']:unit+=function(name,src)+'\n'
 unit+=r'''
 static void select(int n){s_cur_index=n;s_cur=&s_slots[n];}
 static void seed(int n){select(n);s_cur->f_ready=true;glyph_entry_t *g=calloc(1,sizeof(*g));assert(g);
@@ -37,15 +38,16 @@ static void seed(int n){select(n);s_cur->f_ready=true;glyph_entry_t *g=calloc(1,
  cache_buckets[cache_bucket(n,48)]=g;cache_bytes=g->bitmap_bytes+sizeof(*g);s_cache_total+=cache_bytes;lru_touch(g);}
 int main(void){
  for(int i=0;i<4;++i)seed(i);select(0);lru_touch(lru_head);
- assert(cache_reserve(400u*1024u));assert(!s_slots[1].f_cache_bytes&&s_slots[0].f_cache_bytes&&s_slots[2].f_cache_bytes&&s_slots[3].f_cache_bytes);
+ cache_reserve(400u*1024u);
+ assert(!s_slots[0].f_cache_bytes&&s_slots[1].f_cache_bytes&&s_slots[2].f_cache_bytes&&s_slots[3].f_cache_bytes);
+ assert(s_cache_total+400u*1024u<=TTF_CACHE_LIMIT);
  assert(s_cur_index==0&&s_cur==&s_slots[0]);
- available=largest=3u*1024u*1024u;assert(cache_reserve(100u*1024u));
- largest=512u*1024u;assert(cache_reserve(100u*1024u));
- assert(s_cache_total<=TTF_CACHE_PRESSURE_LIMIT-100u*1024u);
+ cache_reserve(800u*1024u);assert(!s_cache_total);
  for(int i=0;i<4;++i)assert(s_slots[i].f_ready);
- available=128u*1024u;assert(cache_reserve(20u*1024u));
- assert(!cache_reserve(TTF_CACHE_LIMIT+1));assert(!s_cache_total);
- puts("PASS: actual global font LRU keeps hot faces, bounded 1MiB/768KiB/320KiB growth, fragmented-memory downgrade, essential low-memory glyph admission and face identity preservation");
+ for(int i=0;i<4;++i)seed(i);select(2);
+ cache_reserve(20u*1024u);assert(s_cache_total+20u*1024u<=TTF_CACHE_LIMIT&&s_slots[2].f_cache_bytes);
+ cache_reset();cache_clear_all();assert(!s_cache_total&&s_cur_index==2&&s_cur==&s_slots[2]);
+ puts("PASS: actual Pico shared 1MiB budget, current-slot eviction, cross-slot fallback, cleanup and face/cursor identity preservation");
 }
 '''
 with tempfile.TemporaryDirectory() as d:

@@ -21,7 +21,7 @@ unit=r'''
 #define ESP_LOGI(...) ((void)0)
 static uint8_t stored;static unsigned writes,gate,ready,held,rearms;
 static bool pin,boot_press;
-static void nvs_put_u8(const char *key,uint8_t value){assert(!strcmp(key,NVS_KEY_WAKE_PRESSES));stored=value;++writes;}
+static bool nvs_put_u8(const char *key,uint8_t value){assert(!strcmp(key,NVS_KEY_WAKE_PRESSES));stored=value;++writes;return true;}
 '''
 unit+=re.search(r'^static uint8_t s_wake_presses = [12];',settings.read_text(),re.M)[0]+'\n'
 for name in ('app_settings_wake_presses','app_settings_set_wake_presses'):

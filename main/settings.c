@@ -166,8 +166,8 @@ static uint8_t s_auto_lock_minutes;
 static uint8_t s_shelf_style = 6;
 static char s_books_dir[MEDIA_DIR_MAX] = "/sdcard/books";
 static char s_fonts_dir[MEDIA_DIR_MAX] = "/sdcard/fonts";
-static void nvs_put_u8(const char* key, uint8_t value);
-static void nvs_put_u32(const char* key, uint32_t value);
+static bool nvs_put_u8(const char* key, uint8_t value);
+static bool nvs_put_u32(const char* key, uint32_t value);
 
 static bool valid_media_dir(const char* path) {
     if (!path || strncmp(path, "/sdcard/", 8) || !path[8] ||
@@ -441,26 +441,19 @@ const char* app_sleep_mode_name(app_sleep_mode_t mode) {
 
 void app_settings_set_sleep_mode(app_sleep_mode_t mode) {
     if (mode > APP_SLEEP_OFF) mode = APP_SLEEP_DEEP;
-    s_sleep = mode;
-    nvs_handle_t h;
-    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
-    nvs_set_u8(h, NVS_KEY_SLEEP, (uint8_t)mode);
-    nvs_commit(h);
-    nvs_close(h);
+    if (nvs_put_u8(NVS_KEY_SLEEP, (uint8_t)mode)) s_sleep = mode;
 }
 
 bool app_settings_staged_shutdown(void) { return s_staged_shutdown; }
 void app_settings_set_staged_shutdown(bool staged) {
     if (staged == s_staged_shutdown) return;
-    s_staged_shutdown = staged;
-    nvs_put_u8(NVS_KEY_SHUTDOWN_MODE, staged ? 1 : 0);
+    if (nvs_put_u8(NVS_KEY_SHUTDOWN_MODE, staged ? 1 : 0)) s_staged_shutdown = staged;
 }
 uint8_t app_settings_wake_presses(void) { return s_wake_presses; }
 void app_settings_set_wake_presses(uint8_t presses) {
     if (presses != 2) presses = 1;
     if (presses == s_wake_presses) return;
-    s_wake_presses = presses;
-    nvs_put_u8(NVS_KEY_WAKE_PRESSES, presses);
+    if (nvs_put_u8(NVS_KEY_WAKE_PRESSES, presses)) s_wake_presses = presses;
 }
 // 密码宽限期：档位码存储避免分钟值超出 u8；480/1440 装不进去。
 // PIN grace: the step code avoids minute values that no longer fit a u8.
@@ -468,8 +461,7 @@ uint8_t app_settings_pin_grace_code(void) { return s_pin_grace_code_v; }
 void app_settings_set_pin_grace_code(uint8_t code) {
     if (code > 4) code = 0;
     if (code == s_pin_grace_code_v) return;
-    s_pin_grace_code_v = code;
-    nvs_put_u8(NVS_KEY_PIN_GRACE, code);
+    if (nvs_put_u8(NVS_KEY_PIN_GRACE, code)) s_pin_grace_code_v = code;
 }
 unsigned app_settings_pin_grace_minutes(void) {
     static const unsigned minutes[5] = {0, 5, 60, 480, 1440};
@@ -513,21 +505,18 @@ app_main_refresh_mode_t app_settings_main_refresh_mode(void) { return s_main_ref
 bool app_settings_main_fast_refresh(void) { return s_main_refresh == APP_MAIN_REFRESH_FAST; }
 void app_settings_set_main_refresh_mode(app_main_refresh_mode_t mode) {
     if (mode < APP_MAIN_REFRESH_NORMAL || mode > APP_MAIN_REFRESH_WATER || mode == s_main_refresh) return;
-    s_main_refresh = mode;
-    nvs_put_u8(NVS_KEY_MAIN_REFRESH, (uint8_t)mode);
+    if (nvs_put_u8(NVS_KEY_MAIN_REFRESH, (uint8_t)mode)) s_main_refresh = mode;
 }
 uint8_t app_settings_auto_lock_minutes(void) { return s_auto_lock_minutes; }
 void app_settings_set_auto_lock_minutes(uint8_t minutes) {
     if (minutes != 0 && minutes != 1 && minutes != 5 && minutes != 10) return;
     if (s_auto_lock_minutes == minutes) return;
-    s_auto_lock_minutes = minutes;
-    nvs_put_u8(NVS_KEY_AUTO_LOCK, minutes);
+    if (nvs_put_u8(NVS_KEY_AUTO_LOCK, minutes)) s_auto_lock_minutes = minutes;
 }
 
 void app_settings_set_home_full_refresh(bool enabled) {
     if (enabled == s_home_full_refresh) return;
-    s_home_full_refresh = enabled;
-    nvs_put_u8(NVS_KEY_HOME_FULL, enabled ? 1 : 0);
+    if (nvs_put_u8(NVS_KEY_HOME_FULL, enabled ? 1 : 0)) s_home_full_refresh = enabled;
 }
 
 static bool nvs_put_str(const char *key, const char *value) {
@@ -583,14 +572,12 @@ void app_settings_set_system_font_size(uint8_t percent) {
 uint8_t app_settings_system_contrast(void) { return s_system_contrast; }
 void app_settings_set_system_contrast(uint8_t percent) {
     if (percent < 100 || percent > 140 || percent % 10 || percent == s_system_contrast) return;
-    s_system_contrast = percent;
-    nvs_put_u8(NVS_KEY_SYS_CONTRAST, percent);
+    if (nvs_put_u8(NVS_KEY_SYS_CONTRAST, percent)) s_system_contrast = percent;
 }
 uint8_t app_settings_lock_style(void) { return s_lock_style; }
 void app_settings_set_lock_style(uint8_t style) {
     if (style > 3 || style == s_lock_style) return;
-    s_lock_style = style;
-    nvs_put_u8(NVS_KEY_LOCK_STYLE, style);
+    if (nvs_put_u8(NVS_KEY_LOCK_STYLE, style)) s_lock_style = style;
 }
 const char* app_settings_bookmark_path(void) { return s_bookmark; }
 void app_settings_set_bookmark_path(const char *path) {
@@ -608,28 +595,26 @@ const char* app_settings_wallpaper_path(void) { return s_wallpaper; }
 void app_settings_set_wallpaper_path(const char* path) {
     if (!path || (path[0] && strncmp(path, "/sdcard/", 8)) ||
         strnlen(path, sizeof(s_wallpaper)) >= sizeof(s_wallpaper)) return;
-    strlcpy(s_wallpaper, path, sizeof(s_wallpaper));
-    nvs_handle_t h;
-    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
-    nvs_set_str(h, NVS_KEY_WALLPAPER, s_wallpaper);
-    nvs_commit(h);
-    nvs_close(h);
+    if (nvs_put_str(NVS_KEY_WALLPAPER, path)) strlcpy(s_wallpaper, path, sizeof(s_wallpaper));
 }
 
-static void nvs_put_u8(const char* key, uint8_t value) {
-    nvs_handle_t h;
-    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
-    nvs_set_u8(h, key, value);
-    nvs_commit(h);
-    nvs_close(h);
+// 用户偏好只在保存成功后更新；失败保留旧值，让相同选择仍可重试。
+// Publish preferences only after a successful save; retaining the old value permits the same selection to retry.
+static bool nvs_put_u8(const char* key, uint8_t value) {
+    esp_err_t err = home_preference_save(key, value);
+    if (err != ESP_OK) ESP_LOGE(TAG, "save %s: %s", key, esp_err_to_name(err));
+    return err == ESP_OK;
 }
 
-static void nvs_put_u32(const char* key, uint32_t value) {
+static bool nvs_put_u32(const char* key, uint32_t value) {
     nvs_handle_t h;
-    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
-    nvs_set_u32(h, key, value);
-    nvs_commit(h);
+    esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) { ESP_LOGE(TAG, "save %s open: %s", key, esp_err_to_name(err)); return false; }
+    err = nvs_set_u32(h, key, value);
+    if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
+    if (err != ESP_OK) ESP_LOGE(TAG, "save %s: %s", key, esp_err_to_name(err));
+    return err == ESP_OK;
 }
 
 uint8_t app_settings_last_wake(void) {
@@ -658,8 +643,7 @@ bool app_settings_pickup_wake(void) {
 
 void app_settings_set_pickup_wake(bool on) {
     if (s_pickup_wake == on) return;
-    s_pickup_wake = on;
-    nvs_put_u8(NVS_KEY_PICKUP, on ? 1 : 0);
+    if (nvs_put_u8(NVS_KEY_PICKUP, on ? 1 : 0)) s_pickup_wake = on;
 }
 
 void app_settings_set_font_path(const char* path) {
@@ -705,8 +689,7 @@ uint8_t app_settings_book_px(void) {
 void app_settings_set_book_px(uint8_t px) {
     px = valid_book_px(px);
     if (s_book_px == px) return;
-    s_book_px = px;
-    nvs_put_u8(NVS_KEY_BOOK_PX, px);
+    if (nvs_put_u8(NVS_KEY_BOOK_PX, px)) s_book_px = px;
 }
 
 // 一次重排会同时改字号/边距/行距/段距：四个键共用一个 NVS 会话和一次提交，而不是四次。
@@ -718,24 +701,24 @@ void app_settings_set_book_layout(uint8_t px, uint8_t margin, uint8_t line, uint
     if (app_settings_book_paragraph_value(app_settings_book_paragraph_level(para)) != para)
         para = s_book_para;
     if (px == s_book_px && margin == s_book_margin && line == s_book_line && para == s_book_para) return;
-    // 与单键写入一致：先更新内存里的值，再尽力落盘。
-    // Same contract as the single-key setters: publish in RAM first, then persist best effort.
+    // 所有写入及提交成功后才发布内存配置；失败时允许整组重试。
+    // Publish the RAM profile only after all writes and commit succeed, allowing the whole group to retry.
     const uint8_t old_px = s_book_px, old_margin = s_book_margin,
                   old_line = s_book_line, old_para = s_book_para;
-    s_book_px = px;
-    s_book_margin = margin;
-    s_book_line = line;
-    s_book_para = para;
     nvs_handle_t h;
-    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
-    esp_err_t err = ESP_OK;
+    esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) { ESP_LOGW(TAG, "book layout: %s", esp_err_to_name(err)); return; }
     if (err == ESP_OK && px != old_px) err = nvs_set_u8(h, NVS_KEY_BOOK_PX, px);
     if (err == ESP_OK && margin != old_margin) err = nvs_set_u8(h, NVS_KEY_BOOK_MARGIN, margin);
     if (err == ESP_OK && line != old_line) err = nvs_set_u8(h, NVS_KEY_BOOK_LINE, line);
     if (err == ESP_OK && para != old_para) err = nvs_set_u8(h, NVS_KEY_BOOK_PARA, para);
     if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
-    if (err != ESP_OK) ESP_LOGW("settings", "book layout: %s", esp_err_to_name(err));
+    if (err != ESP_OK) { ESP_LOGW(TAG, "book layout: %s", esp_err_to_name(err)); return; }
+    s_book_px = px;
+    s_book_margin = margin;
+    s_book_line = line;
+    s_book_para = para;
 }
 
 const char *app_settings_book_background_path(void) { return s_book_background; }
@@ -756,20 +739,17 @@ uint8_t app_settings_reader_full_pages(void) { return s_reader_full_pages; }
 void app_settings_set_reader_full_pages(uint8_t pages) {
     if ((pages != 0 && pages != 5 && pages != 10 && pages != 15 && pages != 30) ||
         pages == s_reader_full_pages) return;
-    s_reader_full_pages = pages;
-    nvs_put_u8(NVS_KEY_READER_FULL, pages);
+    if (nvs_put_u8(NVS_KEY_READER_FULL, pages)) s_reader_full_pages = pages;
 }
 uint8_t app_settings_reader_turn_effect(void) { return s_reader_turn_effect; }
 void app_settings_set_reader_turn_effect(uint8_t effect) {
     if (effect > READER_TURN_EFFECT_MAX || effect == s_reader_turn_effect) return;
-    s_reader_turn_effect = effect;
-    nvs_put_u8(NVS_KEY_READER_TURN, effect);
+    if (nvs_put_u8(NVS_KEY_READER_TURN, effect)) s_reader_turn_effect = effect;
 }
 bool app_settings_reader_power_turn(void) { return s_reader_power_turn; }
 void app_settings_set_reader_power_turn(bool on) {
     if (s_reader_power_turn == on) return;
-    s_reader_power_turn = on;
-    nvs_put_u8(NVS_KEY_POWER_TURN, on ? 1 : 0);
+    if (nvs_put_u8(NVS_KEY_POWER_TURN, on ? 1 : 0)) s_reader_power_turn = on;
 }
 bool app_settings_reader_default_fullscreen(void) { return s_reader_default_fullscreen; }
 bool app_settings_set_reader_default_fullscreen(bool on) {
@@ -798,26 +778,22 @@ bool app_settings_set_reader_equal_margins(bool on) {
 bool app_settings_reader_immersive(void) { return s_reader_immersive; }
 void app_settings_set_reader_immersive(bool on) {
     if (s_reader_immersive == on) return;
-    s_reader_immersive = on;
-    nvs_put_u8(NVS_KEY_IMMERSIVE, on ? 1 : 0);
+    if (nvs_put_u8(NVS_KEY_IMMERSIVE, on ? 1 : 0)) s_reader_immersive = on;
 }
 bool app_settings_reader_hide_images(void) { return s_reader_hide_images; }
 void app_settings_set_reader_hide_images(bool on) {
     if (s_reader_hide_images == on) return;
-    s_reader_hide_images = on;
-    nvs_put_u8(NVS_KEY_HIDE_IMAGES, on ? 1 : 0);
+    if (nvs_put_u8(NVS_KEY_HIDE_IMAGES, on ? 1 : 0)) s_reader_hide_images = on;
 }
 bool app_settings_book_fonts(void) { return s_book_fonts; }
 void app_settings_set_book_fonts(bool on) {
     if (s_book_fonts == on) return;
-    s_book_fonts = on;
-    nvs_put_u8(NVS_KEY_BOOK_FONTS, on ? 1 : 0);
+    if (nvs_put_u8(NVS_KEY_BOOK_FONTS, on ? 1 : 0)) s_book_fonts = on;
 }
 bool app_settings_book_vertical(void) { return s_book_vertical; }
 void app_settings_set_book_vertical(bool on) {
     if (s_book_vertical == on) return;
-    s_book_vertical = on;
-    nvs_put_u8(NVS_KEY_BOOK_VERTICAL, on ? 1 : 0);
+    if (nvs_put_u8(NVS_KEY_BOOK_VERTICAL, on ? 1 : 0)) s_book_vertical = on;
 }
 bool app_settings_ble_turner(void) { return s_ble_turner; }
 app_reader_key_action_t app_settings_reader_key_action(unsigned key) {
@@ -872,18 +848,15 @@ bool app_settings_reader_hold_refresh(void) { return s_reader_hold_refresh; }
 bool app_settings_reader_vertical_turn(void) { return s_reader_vertical_turn; }
 void app_settings_set_reader_vertical_turn(bool on) {
     if (s_reader_vertical_turn == on) return;
-    s_reader_vertical_turn = on;
-    nvs_put_u8(NVS_KEY_VERTICAL_TURN, on ? 1 : 0);
+    if (nvs_put_u8(NVS_KEY_VERTICAL_TURN, on ? 1 : 0)) s_reader_vertical_turn = on;
 }
 void app_settings_set_reader_hold_refresh(bool on) {
     if (s_reader_hold_refresh == on) return;
-    s_reader_hold_refresh = on;
-    nvs_put_u8(NVS_KEY_HOLD_REFRESH, on ? 1 : 0);
+    if (nvs_put_u8(NVS_KEY_HOLD_REFRESH, on ? 1 : 0)) s_reader_hold_refresh = on;
 }
 void app_settings_set_ble_turner(bool on) {
     if (s_ble_turner == on) return;
-    s_ble_turner = on;
-    nvs_put_u8(NVS_KEY_BLE_TURNER, on ? 1 : 0);
+    if (nvs_put_u8(NVS_KEY_BLE_TURNER, on ? 1 : 0)) s_ble_turner = on;
 }
 bool app_settings_shelf_recent_sort(void) { return s_shelf_recent_sort; }
 uint8_t app_settings_shelf_order(void) { return s_shelf_order; }
@@ -900,27 +873,24 @@ void app_settings_set_shelf_recent_sort(bool on) {
 uint8_t app_settings_book_tracking(void) { return s_book_tracking; }
 void app_settings_set_book_tracking(uint8_t index) {
     if (index >= APP_BOOK_TRACK_COUNT || index == s_book_tracking) return;
-    s_book_tracking = index;
-    nvs_put_u8(NVS_KEY_BOOK_TRACK, 192+index);
+    if (nvs_put_u8(NVS_KEY_BOOK_TRACK, 192+index)) s_book_tracking = index;
 }
 uint8_t app_settings_book_indent(void) { return s_book_indent; }
 void app_settings_set_book_indent(uint8_t em) {
     if (em > 3 || em == s_book_indent) return;
-    s_book_indent = em;
-    nvs_put_u8(NVS_KEY_BOOK_INDENT, em);
+    if (nvs_put_u8(NVS_KEY_BOOK_INDENT, em)) s_book_indent = em;
 }
 int8_t app_settings_book_indent_adjust(void) { return s_book_indent_adjust <= 120 ? (int8_t)((int)s_book_indent_adjust - 20) : (int8_t)(100 - (int)s_book_indent_adjust); }
 void app_settings_set_book_indent_adjust(int8_t px) {
     if (px < -100 || px > 100 || px == app_settings_book_indent_adjust()) return;
     // 0..40保留旧配置语义，扩展负值使用121..200。/ Preserve legacy 0..40 encoding; extended negatives use 121..200.
-    s_book_indent_adjust = (uint8_t)(px >= -20 ? px + 20 : 100 - px);
-    nvs_put_u8(NVS_KEY_BOOK_INDENT_ADJUST, s_book_indent_adjust);
+    uint8_t encoded = (uint8_t)(px >= -20 ? px + 20 : 100 - px);
+    if (nvs_put_u8(NVS_KEY_BOOK_INDENT_ADJUST, encoded)) s_book_indent_adjust = encoded;
 }
 uint8_t app_settings_book_reading_line(void) { return s_book_reading_line; }
 void app_settings_set_book_reading_line(uint8_t style) {
     if (style > 2 || style == s_book_reading_line) return;
-    s_book_reading_line = style;
-    nvs_put_u8(NVS_KEY_BOOK_RULE, style);
+    if (nvs_put_u8(NVS_KEY_BOOK_RULE, style)) s_book_reading_line = style;
 }
 bool app_settings_book_reading_line_full(void) { return s_book_rule_full; }
 bool app_settings_set_book_reading_line_full(bool full) {
@@ -939,21 +909,18 @@ void app_settings_set_book_reading_line_offset(int8_t offset_px) {
     if (offset_px < -8 || offset_px > 8 || offset_px % 2) return;
     uint8_t index = (uint8_t)(offset_px / 2 + 4);
     if (index == s_book_rule_offset) return;
-    s_book_rule_offset = index;
-    nvs_put_u8(NVS_KEY_BOOK_RULE_OFFSET, index);
+    if (nvs_put_u8(NVS_KEY_BOOK_RULE_OFFSET, index)) s_book_rule_offset = index;
 }
 uint8_t app_settings_book_line_spacing(void) { return s_book_line; }
 void app_settings_set_book_line_spacing(uint8_t percent) {
     if (percent < 110 || percent > 150) return;
     if (s_book_line == percent) return;
-    s_book_line = percent;
-    nvs_put_u8(NVS_KEY_BOOK_LINE, percent);
+    if (nvs_put_u8(NVS_KEY_BOOK_LINE, percent)) s_book_line = percent;
 }
 uint8_t app_settings_book_margin(void) { return s_book_margin; }
 void app_settings_set_book_margin(uint8_t px) {
     if (px > 48 || s_book_margin == px) return;
-    s_book_margin = px;
-    nvs_put_u8(NVS_KEY_BOOK_MARGIN, px);
+    if (nvs_put_u8(NVS_KEY_BOOK_MARGIN, px)) s_book_margin = px;
 }
 // 非线性段距保留旧档位，并将25%置于几何中点。/ Nonlinear gaps retain legacy stops with 25% at the geometric midpoint.
 uint8_t app_settings_book_paragraph_value(uint8_t level) {
@@ -974,8 +941,7 @@ uint8_t app_settings_book_paragraph_spacing(void) { return s_book_para; }
 void app_settings_set_book_paragraph_spacing(uint8_t percent) {
     if (app_settings_book_paragraph_value(app_settings_book_paragraph_level(percent)) != percent) return;
     if (s_book_para == percent) return;
-    s_book_para = percent;
-    nvs_put_u8(NVS_KEY_BOOK_PARA, percent);
+    if (nvs_put_u8(NVS_KEY_BOOK_PARA, percent)) s_book_para = percent;
 }
 uint8_t app_settings_shelf_style(void) { return s_shelf_style; }
 void app_settings_set_shelf_style(uint8_t style) {

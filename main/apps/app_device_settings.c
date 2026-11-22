@@ -71,6 +71,7 @@
 #include "app_font_context.h"
 #include "ui_gesture.h"
 #include "ui_kit.h"
+#include "ui_text_fit.h"
 #include "ui_root_style.h"
 #include "ui_text_input.h"
 #include "ui_keyboard.h"
@@ -404,9 +405,7 @@ static const char *system_font_label(const char *path) {
     const char *name = strrchr(path, '/');
     name = name ? name + 1 : path;
     static char stem[TTF_FONT_NAME_MAX];
-    snprintf(stem, sizeof(stem), "%s", name);
-    size_t len = strlen(stem);
-    if (len >= 4 && !strcasecmp(stem + len - 4, ".ttf")) stem[len - 4] = 0;
+    ttf_font_label_from_path(name,stem,sizeof(stem));
     if (!strcasecmp(stem, "Hei")) return "思源黑体（TF 卡）";
     return ttf_font_localized_name(stem);
 }
@@ -436,8 +435,10 @@ static void draw_system_font_picker(uint8_t *fb) {
         bool active=item?!strcmp(selected,item->path):!selected[0];
         EpdRect box=system_font_item_rect(slot);
         settings_card(fb,box,16,active?0xe0:UI_GRAY_WHITE,0x70);
-        ui_text_box(fb,(EpdRect){box.x+16,box.y,box.width-64,box.height},26,
-                    item?system_font_label(item->path):"思源黑体（内建）",EPD_DRAW_ALIGN_LEFT,false);
+        char label[TTF_FONT_NAME_MAX];
+        snprintf(label,sizeof(label),"%s",item?system_font_label(item->path):"思源黑体（内建）");
+        ui_text_fit_middle(label,ui_text_effective_px(26),box.width-64,ui_text_fixed_width_px);
+        ui_text_box(fb,(EpdRect){box.x+16,box.y,box.width-64,box.height},26,label,EPD_DRAW_ALIGN_LEFT,false);
         if(active)epd_fill_circle(613,box.y+box.height/2,6,UI_GRAY_BLACK,fb);
     }
     int pages=(count+SYSTEM_FONT_PAGE_SIZE)/SYSTEM_FONT_PAGE_SIZE;

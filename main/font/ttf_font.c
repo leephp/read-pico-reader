@@ -629,13 +629,31 @@ static bool is_ttf_name(const char* name) {
 }
 
 static void font_stem(const char* path, char* out, size_t n) {
+    if (!n) return;
     const char* slash = strrchr(path, '/');
     const char* name = slash != NULL ? slash + 1 : path;
-    strlcpy(out, name, n);
-    size_t len = strlen(out);
-    if (len >= 4 && strcasecmp(out + len - 4, ".ttf") == 0) {
-        out[len - 4] = '\0';
+    size_t len = strlen(name);
+    if (len >= 4 && strcasecmp(name + len - 4, ".ttf") == 0) len -= 4;
+    // 先移除扩展名，再按完整 UTF-8 字符截断显示名。/ Strip the suffix before truncating at a UTF-8 boundary.
+    if (len >= n) {
+        if(n>=7){
+            size_t head=(n-4)/2;
+            while(head&&((unsigned char)name[head]&0xc0)==0x80)--head;
+            size_t tail=len-(n-4-head);
+            while(tail<len&&((unsigned char)name[tail]&0xc0)==0x80)++tail;
+            memcpy(out,name,head);memcpy(out+head,"…",3);
+            memcpy(out+head+3,name+tail,len-tail);out[head+3+len-tail]=0;
+            return;
+        }
+        len = n - 1;
+        while (len && ((unsigned char)name[len] & 0xc0) == 0x80) --len;
     }
+    memcpy(out, name, len);
+    out[len] = '\0';
+}
+
+void ttf_font_label_from_path(const char *path,char *out,size_t capacity) {
+    font_stem(path,out,capacity);
 }
 
 static int font_item_cmp(const void* a, const void* b) {
@@ -648,7 +666,8 @@ static bool catalog_has_name(
     const ttf_font_item_t* items, int n, const char* name
 ) {
     for (int i = 0; i < n; i++) {
-        if (strcasecmp(items[i].name, name) == 0) return true;
+        // 显示名可能截断，去重必须比较完整文件名。/ Deduplicate full filenames, never truncated labels.
+        if (strcasecmp(font_basename(items[i].path), name) == 0) return true;
     }
     return false;
 }
@@ -668,17 +687,25 @@ static int s_catalog_n;
 int ttf_font_scan(void) {
     if (!catalog_alloc()) return 0;
     s_catalog_n = 0;
-    for (size_t d = 0; d < sizeof(k_font_dirs) / sizeof(k_font_dirs[0]); d++) {
+    for (size_t d = 0; d < sizeof(k_font_dirs) / sizeof(k_font_dirs[0]) && s_catalog_n < TTF_FONT_MAX; d++) {
         const char* font_dir = k_font_dirs[d] ? k_font_dirs[d] : app_settings_fonts_dir();
+        // 同一轮不重复扫描相同目录；下次仍重扫，避免换卡/同步后的陈旧目录。
+        // Skip duplicate roots within this scan; rescan next time for card/sync changes.
+        bool duplicate = false;
+        for (size_t prior = 0; prior < d; ++prior) {
+            const char *previous = k_font_dirs[prior] ? k_font_dirs[prior] : app_settings_fonts_dir();
+            if (!strcmp(font_dir, previous)) { duplicate = true; break; }
+        }
+        if (duplicate) continue;
         DIR* dir = opendir(font_dir);
         if (dir == NULL) continue;
         struct dirent* ent;
-        while ((ent = readdir(dir)) != NULL && s_catalog_n < TTF_FONT_MAX) {
+        while (s_catalog_n < TTF_FONT_MAX && (ent = readdir(dir)) != NULL) {
             if (ent->d_name[0] == '.') continue; // Ignore macOS ._ font sidecars.
             if (!is_ttf_name(ent->d_name)) continue;
             char name[TTF_FONT_NAME_MAX];
             font_stem(ent->d_name, name, sizeof(name));
-            if (name[0] == '\0' || catalog_has_name(s_catalog, s_catalog_n, name)) {
+            if (name[0] == '\0' || catalog_has_name(s_catalog, s_catalog_n, ent->d_name)) {
                 continue;
             }
             int path_len = snprintf(

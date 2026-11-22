@@ -201,3 +201,6 @@ void ttf_font_cache_clear(void);
 size_t ttf_font_cache_clear_all(void);
 void ttf_bench_begin(void);
 void ttf_bench_end(ttf_bench_stats_t* out);
+
+// UTF-8-safe display stem shared by system and reader pickers.
+void ttf_font_label_from_path(const char *path,char *out,size_t capacity);

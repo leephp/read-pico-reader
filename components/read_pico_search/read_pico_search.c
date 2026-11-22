@@ -13,14 +13,18 @@
 #include "search_table.h"
 #include "search_candidates.h"
 #include "search_packed.h"
-// Fixed-width immutable data: direct random access, no decompression buffer or heap.
+// 每块固定字宽差分；随机访问不解压整块、不分配内存。/ Fixed-width block deltas retain random access without buffers or allocation.
 static uint32_t search_unpack(const uint8_t *data,size_t i,unsigned bits) {
     size_t bit=i*bits,offset=bit/8;
     uint32_t word=(uint32_t)data[offset]|((uint32_t)data[offset+1]<<8)|
         ((uint32_t)data[offset+2]<<16)|((uint32_t)data[offset+3]<<24);
     return (word>>(bit%8))&((1u<<bits)-1);
 }
-static uint32_t search_codepoint_at(size_t i) { return search_unpack(search_packed_codepoints,i,SEARCH_PACKED_CODEPOINTS_BITS); }
+static uint32_t search_codepoint_at(size_t i) {
+    size_t block=i/SEARCH_CODEPOINT_BLOCK;
+    return search_cp_bases[block]+search_unpack(search_cp_deltas+search_cp_offsets[block],
+        i%SEARCH_CODEPOINT_BLOCK,search_cp_widths[block]);
+}
 static uint16_t search_group_at(size_t i) { return (uint16_t)search_unpack(search_packed_groups,i,SEARCH_PACKED_GROUPS_BITS); }
 #define SEARCH_CODEPOINT_COUNT SEARCH_PACKED_COUNT
 
@@ -72,14 +76,28 @@ static size_t stem_length(const char* name, size_t n) {
     return n;
 }
 static int lookup(uint32_t cp) {
-    size_t low = 0, high = SEARCH_CODEPOINT_COUNT;
+    if (cp < search_cp_bases[0] || cp > search_codepoint_at(SEARCH_CODEPOINT_COUNT - 1)) return -1;
+    size_t low = 0, high = sizeof(search_cp_bases) / sizeof(search_cp_bases[0]);
     while (low < high) {
         size_t mid = low + (high - low) / 2;
-        if (search_codepoint_at(mid) < cp) low = mid + 1;
+        if (search_cp_bases[mid] <= cp) low = mid + 1;
         else high = mid;
     }
-    return low < SEARCH_CODEPOINT_COUNT && search_codepoint_at(low) == cp
-        ? (int)search_group_at(low) : -1;
+    size_t block = low - 1, first = block * SEARCH_CODEPOINT_BLOCK;
+    uint32_t delta = cp - search_cp_bases[block];
+    const uint8_t *data = search_cp_deltas + search_cp_offsets[block];
+    unsigned bits = search_cp_widths[block];
+    low = 0;
+    high = SEARCH_CODEPOINT_COUNT - first;
+    if (high > SEARCH_CODEPOINT_BLOCK) high = SEARCH_CODEPOINT_BLOCK;
+    const size_t count = high;
+    while (low < high) {
+        size_t mid = low + (high - low) / 2;
+        if (search_unpack(data, mid, bits) < delta) low = mid + 1;
+        else high = mid;
+    }
+    return low < count && search_unpack(data, low, bits) == delta
+        ? (int)search_group_at(first + low) : -1;
 }
 // 位j表示已匹配查询前j字节；每步允许重新开始子串。/ Bit j means j matched query bytes; every step can start a new substring.
 static bool advance(uint64_t* state, unsigned char c, const uint64_t masks[128], uint64_t finish) {

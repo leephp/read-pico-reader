@@ -137,6 +137,33 @@ const EpdWaveform* display_reader_soft_turn_waveform(void) {
     return &s_soft_waveform;
 }
 
+// 自动全刷保持完整GC16前缀，再补白12相/补黑4相；中灰不追加驱动。
+// Retain the complete GC16 prefix, then white12/black4; intermediate grays hold.
+const EpdWaveform* display_reader_cleanup_waveform(void) {
+    static uint8_t data[64][16][4];
+    static EpdWaveformPhases phases;
+    static const EpdWaveformPhases* ranges[] = {&phases};
+    static const EpdWaveformMode mode = {MODE_GC16, 1, ranges};
+    static const EpdWaveformMode* modes[] = {&mode};
+    static EpdWaveform waveform = {.num_modes=1, .num_temp_ranges=1, .mode_data=modes};
+    static bool ready;
+    if (ready) return &waveform;
+    const EpdWaveformPhases* base = e0470_waveform_phases(&E0470_FULL_WAVEFORM, MODE_GC16);
+    if (!base || !base->luts || base->phase_times || base->phases != 48)
+        return &E0470_FULL_WAVEFORM;
+    memcpy(data, base->luts, 48 * 16 * 4);
+    memset(data + 48, 0, 16 * 16 * 4);
+    for (int from=0; from<16; ++from) {
+        unsigned shift=6-2*(from%4);
+        for (int f=48; f<60; ++f) data[f][15][from/4] |= (uint8_t)(2u<<shift);
+        for (int f=60; f<64; ++f) data[f][0][from/4] |= (uint8_t)(1u<<shift);
+    }
+    phases = (EpdWaveformPhases){64, (const uint8_t*)data, NULL};
+    waveform.temp_intervals = E0470_FULL_WAVEFORM.temp_intervals;
+    ready = true;
+    return &waveform;
+}
+
 // 只驱白：所有目标为白的像素从任意状态再补白，其他目标完全保持，不动未变化的正文/文字。
 // White-only drive: push white targets from any state and hold everything else, without
 // re-driving unchanged text or graphics.

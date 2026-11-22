@@ -67,14 +67,14 @@ static void invalidate_prep(void){}
 static void __attribute__((unused)) pause_reader_prep(void){}
 static bool immersive,persisted_immersive,hide_images,vertical,power_turn;
 #define UI_LOCK_WIDTH 684
-static unsigned style_saves;
+static unsigned style_saves;static bool fail_option_save;
 static bool app_settings_reader_immersive(void){return immersive;}
-static void app_settings_set_reader_immersive(bool v){immersive=persisted_immersive=v;++style_saves;}
+static void app_settings_set_reader_immersive(bool v){if(!fail_option_save){immersive=persisted_immersive=v;++style_saves;}}
 static bool app_settings_reader_hide_images(void){return hide_images;}
-static void app_settings_set_reader_hide_images(bool v){hide_images=v;}
+static void app_settings_set_reader_hide_images(bool v){if(!fail_option_save)hide_images=v;}
 static void book_layout_set_images_visible(bool v){(void)v;}
 static bool app_settings_book_vertical(void){return vertical;}
-static void app_settings_set_book_vertical(bool v){vertical=v;}
+static void app_settings_set_book_vertical(bool v){if(!fail_option_save)vertical=v;}
 static void book_layout_set_vertical(bool v){(void)v;}
 static bool app_settings_reader_power_turn(void){return power_turn;}
 static void app_settings_set_reader_power_turn(bool v){power_turn=v;}
@@ -132,6 +132,7 @@ static void book_layout_set_first_line_indent_adjust(int px){assert(draw_locked)
 """
 unit+='static bool s_rc_auto_turning,s_rc_auto_waiting;\nstatic reader_auto_clock_t s_rc_auto;\n'+function('rc_pause_auto',ROOT/'main/apps/book_reader_controls_runtime.inc')+'\n'
 unit += function('ticket_count_turn',ROOT/'main/apps/book_ticket_reader.inc')+'\n'
+unit += 'static app_redraw_t reader_restore_saved_layout(size_t off){(void)off;assert(false);return APP_REDRAW_PAGE;}\n'
 unit += function('apply_reader_indent', BOOK) + '\n'
 for name in ('reader_zoom_reset', 'app_book_request_open', 'app_book_request_open_from_home', 'app_book_request_resume',
              'toggle_reader_fullscreen', 'apply_reader_option', 'reader_turn_chrome', 'turn_page'):
@@ -163,6 +164,11 @@ static void reset(bool full,bool tools,size_t page,size_t chapter){
  s_reader_turn_pending=s_water_turn_pending=s_reader_cleanup=false;s_jump_offset=0;
 }
 int main(void){
+ {app_ctx_t failed_ctx={0};fail_option_save=true;
+  for(int kind=1;kind<=3;++kind){assert(apply_reader_option(&failed_ctx,kind)==APP_REDRAW_PAGE);assert(!reflows&&!saves&&!draw_locked&&!immersive&&!hide_images&&!vertical&&strstr(s_reader_notice,"保存失败"));}
+  fail_option_save=false;
+ }
+
  app_ctx_t ctx={.now_ms=1000};
  reader_auto_start(&s_rc_auto,1000,1);assert(toggle_reader_fullscreen(&ctx)==APP_REDRAW_FULL&&s_rc_auto.running&&s_rc_auto_waiting);
  reset(true,false,2,0);size_t anchor=book_layout_page_start_offset(s_page);
@@ -260,8 +266,14 @@ int main(void){
    s_reader_text_frame=true;
    assert(turn_page(&ctx,n&1?1:-1)==APP_REDRAW_AREA&&s_reader_turn_pending&&!s_water_turn_pending);
    assert(s_reader_cleanup==(full_pages&&n%full_pages==0));
+   if(s_reader_cleanup){assert(s_turns==full_pages);s_turns=0;} // Simulate successful present acknowledgement.
   }
  }
+ // Without successful presentation, cleanup stays due on the next turn (bounded count).
+ reset(true,false,2,0);full_pages=15;s_turns=14;
+ assert(turn_page(&ctx,1)==APP_REDRAW_AREA&&s_reader_cleanup&&s_turns==15);
+ assert(turn_page(&ctx,-1)==APP_REDRAW_AREA&&s_reader_cleanup&&s_turns==15);
+ full_pages=0;assert(turn_page(&ctx,1)==APP_REDRAW_AREA&&!s_reader_cleanup&&s_turns==0);
  puts("PASS: standard entry and explicit sleep overrides; mode-preserving destination anchors; toolbar dismissal; chapter/boundary turns; failed reflow restores safely or returns to the shelf");
 }
 '''

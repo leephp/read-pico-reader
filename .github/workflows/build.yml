@@ -37,6 +37,7 @@ jobs:
         run: |
           python3 tools/progress_boot_storage_host_test.py
           python3 tools/settings_restore_storage_host_test.py
+          python3 tools/settings_persistence_host_test.py
       - name: Water-turn, display recovery, navigation and waveform regressions
         shell: bash
         working-directory: build/host/pico
@@ -45,6 +46,7 @@ jobs:
           bash tools/run_display_host_test.sh
           bash tools/run_display_navigation_tests.sh
           python3 tools/pmic_gate_host_test.py
+          python3 tools/sy7636a_poweroff_host_test.py
           python3 tools/boot_panel_actions_host_test.py
           python3 tools/lock_pin_host_test.py
           python3 tools/lock_screen_host_test.py
@@ -68,9 +70,15 @@ jobs:
           python3 tools/pager_host_test.py
           python3 tools/shelf_pager_host_test.py
           python3 tools/quick_layer_raster_host_test.py
+          python3 tools/glass_filter_host_test.py
+          python3 tools/cover_jobs_host_test.py
+          python3 tools/shelf_page_cache_host_test.py
+          python3 tools/transfer_asset_host_test.py
+          node tools/transfer_web_host_test.js
           python3 tools/test_epd_difference_bounds.py --check-regression
           python3 tools/pico_reader_crop_host_test.py
           python3 tools/test_lcd_frame_lifecycle.py
+          python3 tools/reader_gray_pipeline_host_test.py
           sh tools/run_app_loop_host_tests.sh
           python3 tools/reader_spacing_host_test.py
           python3 tools/test_book_toc.py
@@ -165,6 +173,8 @@ jobs:
           python3 tools/reader_controls_host_test.py
           python3 tools/reader_tap_dispatch_host_test.py
           python3 tools/reader_ui_scale_host_test.py
+          python3 tools/ui_text_fit_host_test.py
+          python3 tools/reader_settings_failure_host_test.py
           python3 tools/reader_refresh_release_host_test.py
           python3 tools/reader_fullscreen_host_test.py
           python3 tools/reader_overlay_host_test.py

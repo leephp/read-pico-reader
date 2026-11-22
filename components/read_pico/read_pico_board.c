@@ -119,7 +119,10 @@ i2c_master_bus_handle_t read_pico_i2c_bus(void) {
 
 static void read_pico_i2c_deinit(void) {
     if (s_sy) {
-        sy7636a_deinit(s_sy);
+        if (sy7636a_deinit(s_sy) != ESP_OK) {
+            ESP_LOGE(TAG, "keep I2C alive: EPD shutdown unconfirmed");
+            return;
+        }
         s_sy = NULL;
     }
     if (s_ioe) {
@@ -522,6 +525,8 @@ static void board_poweron(epd_ctrl_state_t* state) {
 }
 
 static void board_poweroff(epd_ctrl_state_t* state) {
+    const uint8_t before = ioe_output;
+    const int64_t begin_us = esp_timer_get_time();
     vcom_gated = false;
     state->ep_output_enable = false;
     state->ep_mode = true;
@@ -532,8 +537,12 @@ static void board_poweroff(epd_ctrl_state_t* state) {
     board_set_ctrl(state, &ctrl_mask);
 
     vTaskDelay(pdMS_TO_TICKS(1));
-    (void)sy7636a_power_off(s_sy);
+    esp_err_t err = sy7636a_power_off(s_sy);
+    // 下一次上电必须重新经过 PMIC；失败的关电由 rails_on 查询保守报告。
+    // Re-enter the PMIC on the next power-on; the public rail query retains pending shutdowns.
     rails_on = false;
+    ESP_LOGI(TAG, "poweroff board us begin=%lld end=%lld requested_ioe=%02x->%02x rc=%d",
+             (long long)begin_us, (long long)esp_timer_get_time(), before, ioe_output, (int)err);
 }
 
 esp_err_t read_pico_epd_verify_poweroff(void) {
@@ -553,7 +562,7 @@ esp_err_t read_pico_epd_verify_poweroff(void) {
 }
 
 static void board_deinit(void) {
-    if (rails_on) {
+    if (read_pico_rails_on()) {
         board_poweroff(epd_ctrl_state());
     }
     epd_lcd_deinit();
@@ -730,7 +739,7 @@ esp_err_t read_pico_toggle_vcomctl(void) {
 }
 
 bool read_pico_rails_on(void) {
-    return rails_on;
+    return rails_on || sy7636a_rails_on(s_sy);
 }
 
 esp_err_t read_pico_sd_detect(bool* present) {

@@ -15,7 +15,11 @@ REQUIRED_FILES = ('board.json', 'board.cmake', 'board_hw.c', 'kiiko_board_config
                   'sdkconfig.defaults', 'dependencies.lock')
 REQUIRED_KEYS = ('id', 'name', 'idf_target', 'project', 'image_chip_id', 'bootloader_offset',
                  'version', 'sdkconfig', 'partitions', 'settings_namespace', 'online_ota')
-VERSION = re.compile(r'^\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.]*)?$')
+VERSION = re.compile(r'^\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$')
+# Local version suffixes may contain hyphens; retain the numeric core and reject whitespace.
+assert VERSION.fullmatch('0.3.3-rc109-qdsx-v0.1.8')
+assert not VERSION.fullmatch('0.3.3 rc109')
+assert not VERSION.fullmatch('qdsx-v0.1.8')
 FLASH_SIZES = {'16MB': 16 * 1024 * 1024, '8MB': 8 * 1024 * 1024, '4MB': 4 * 1024 * 1024}
 
 

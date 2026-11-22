@@ -536,6 +536,32 @@ def pack_4bpp(image: Image.Image) -> list[int]:
 
 # ---------------------------------------------------------------- 输出 / Emitting
 
+def compress_mask(packed: list[int]) -> bytes:
+    """无损字节游程，最多 128 字节一段。/ Lossless byte runs, at most 128 bytes each."""
+    out = bytearray()
+    at = 0
+    while at < len(packed):
+        count = 1
+        while at + count < len(packed) and count < 128 and packed[at + count] == packed[at]:
+            count += 1
+        if count >= 3:
+            out.extend((127 + count, packed[at]))
+            at += count
+        else:
+            start = at
+            at += count
+            while at < len(packed) and at - start < 128:
+                count = 1
+                while at + count < len(packed) and count < 3 and packed[at + count] == packed[at]:
+                    count += 1
+                if count == 3:
+                    break
+                at += min(count, 128 - (at - start))
+            out.append(at - start - 1)
+            out.extend(packed[start:at])
+    return bytes(out)
+
+
 def emit_header(masks: dict[str, list[int]]) -> None:
     lines = [
         "/*",
@@ -554,6 +580,7 @@ def emit_header(masks: dict[str, list[int]]) -> None:
         " */",
         "#pragma once",
         "#include <stdint.h>",
+        '#include "../ui/ui_icon_rle.h"',
         "",
         f"#define UI_ICON_MASK_SIZE {MASK_SIZE}",
         "#define UI_ICON_MASK_BYTES (UI_ICON_MASK_SIZE * UI_ICON_MASK_SIZE / 2)",
@@ -567,15 +594,29 @@ def emit_header(masks: dict[str, list[int]]) -> None:
         "    UI_ICON_COUNT,",
         "} ui_icon_t;",
         "",
-        "static const uint8_t ui_icon_masks[UI_ICON_COUNT][UI_ICON_MASK_BYTES] = {",
     ]
+    payload = bytearray()
+    offsets = [0]
     for name, packed in masks.items():
-        lines.append(f"    {{  // {name}")
-        for start in range(0, len(packed), 20):
-            row = ", ".join(f"0x{byte:02x}" for byte in packed[start:start + 20])
-            lines.append(f"        {row},")
-        lines.append("    },")
-    lines.append("};")
+        payload.extend(compress_mask(packed))
+        offsets.append(len(payload))
+    lines += [
+        "// 无损字节游程，每枚图标独立解码。/ Lossless byte runs, decoded one icon at a time.",
+        "static const uint32_t ui_icon_offsets[UI_ICON_COUNT + 1] = {",
+        "    " + ", ".join(str(value) for value in offsets),
+        "};",
+        "static const uint8_t ui_icon_data[] = {",
+    ]
+    for start in range(0, len(payload), 20):
+        lines.append("    " + ", ".join(f"0x{byte:02x}" for byte in payload[start:start + 20]) + ",")
+    lines += ["};", "",
+        "static inline bool ui_icon_decode(ui_icon_t icon, uint8_t out[UI_ICON_MASK_BYTES]) {",
+        "    if (icon < 0 || icon >= UI_ICON_COUNT) return false;",
+        "    size_t start = ui_icon_offsets[icon], end = ui_icon_offsets[icon + 1];",
+        "    if (start > end || end > sizeof(ui_icon_data)) return false;",
+        "    return ui_icon_rle_decode(ui_icon_data + start, end - start, out, UI_ICON_MASK_BYTES);",
+        "}",
+    ]
     HEADER.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

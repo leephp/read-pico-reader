@@ -185,24 +185,26 @@
       "reason": "2026-11-21: Pico-only source promotion and removal of inactive S31 branches; archived at s31-final-2026-11-21."
     },
     "components/read_pico/read_pico_board.c": {
-      "sha256": "79f262c6a1b6f07c30ca37cc5b063830636fc492cfd328972a98a18da239f5cf",
-      "reason": "2026-11-21: Pico-only source promotion and removal of inactive S31 branches; archived at s31-final-2026-11-21."
+      "sha256": "2f347feab3615a79aa29fb5bcfc3774bbca03cdbf779ffbd673a5e8cd85138af",
+      "reason": "2026-11-22 user requests confirmed shutdown-path fixes and timestamp alignment: preserve opt9 OP flags; report/retain failed shutdown, bounded idle retry and PMIC recovery before restart; command phase timestamps, no waveform/voltage/pin sequencing change. Local only, no flash/publication/push."
     },
     "main/display.c": {
-      "sha256": "d700a9c4a58940d60ba090c6d1d30b78293f022262df0d5970bdb746173df57d",
-      "reason": "2026-11-21: Pico-only source promotion and removal of inactive S31 branches; archived at s31-final-2026-11-21."
+      "sha256": "de0026909c52f1daa723fd645e50a1a182535ac16c671347b9d4813db8e2467b",
+      "reason": "2026-11-22 user requests confirmed shutdown-path fixes and timestamp alignment: preserve opt9 OP flags; report/retain failed shutdown, bounded idle retry and PMIC recovery before restart; command phase timestamps, no waveform/voltage/pin sequencing change. Local only, no flash/publication/push."
     },
     "main/display_main_waveform.c": {
       "sha256": "56b119c03ecef23dcdfabe36e9fe6e67e08ad53ce383123fd1e240aea0ec261f",
       "reason": "2026-11-21: Pico-only source promotion and removal of inactive S31 branches; archived at s31-final-2026-11-21."
     },
     "main/display_reader_waveform.c": {
-      "sha256": "206d6fef9b9134b13ba2cc706e20cdfea4610f102502c4eb344615c242cc3689",
-      "reason": "2026-11-21: Pico-only source promotion and removal of inactive S31 branches; archived at s31-final-2026-11-21."
+      "sha256": "fba604e2a2419b3c1af284f9df1a1e818331ea88a44532d236adb182f44a045c",
+      "reason": "2026-11-22 explicit user approval: periodic GC16 retains native48 then appends target-white12/target-black4; midgrays hold. Ordinary/manual/native waveforms unchanged.",
+      "previous_sha256": "206d6fef9b9134b13ba2cc706e20cdfea4610f102502c4eb344615c242cc3689"
     },
     "main/sleep.c": {
-      "sha256": "93a585a371ec6358be1a2d4250854603ecfcef5d5e400155f2cb3852cb45a523",
-      "reason": "2026-11-21: Pico-only source promotion and removal of inactive S31 branches; archived at s31-final-2026-11-21."
+      "sha256": "ca234d3ec1d4c66ada968a7f4e6261a0c0c698e082ca7c12c9efb79b6308582d",
+      "reason": "2026-11-22: align the pin with existing committed Pico baseline af6ad4f (2026-11-21 USB serial resume after successful light sleep). main/sleep.c is byte-identical to that commit; no sleep/driver change in the optimization work.",
+      "previous_sha256": "93a585a371ec6358be1a2d4250854603ecfcef5d5e400155f2cb3852cb45a523"
     },
     "cmake/board.cmake": {
       "sha256": "acd0e4712239905cc3d66b0191de3da1e86eb7742692ed19434fe072b2b2bd7b",
@@ -337,12 +339,20 @@
       "reason": "2026-11-21: Pico-only source promotion and removal of inactive S31 branches; archived at s31-final-2026-11-21."
     },
     "main/display_reader_waveform.h": {
-      "sha256": "910ffbd6554946f42fbba9feb55e47e1685da5f8020399c6ad19b83ba0c09c36",
-      "reason": "2026-11-21: Pico-only source promotion and removal of inactive S31 branches; archived at s31-final-2026-11-21. Normalize trailing blank lines."
+      "sha256": "5b24f193b699f39c4a816ba1ec78a331a4d0b930f1ad30890ee74e44e7ee50ca",
+      "reason": "2026-11-22 explicit user approval: periodic GC16 retains native48 then appends target-white12/target-black4; midgrays hold. Ordinary/manual/native waveforms unchanged."
     },
     "main/sleep.h": {
       "sha256": "469ac62e0fb0ee9895181c9690b453e2c13d9ed545408ad02abaa7ceb49c6e7c",
       "reason": "2026-11-21: Pico-only source promotion and removal of inactive S31 branches; archived at s31-final-2026-11-21."
+    },
+    "components/sy7636a/sy7636a.c": {
+      "sha256": "5f60dd90356778ebf7616e011a2392b8cec7f8d0d9cf43ccfd22fe00e9f81c56",
+      "reason": "2026-11-22 user requests confirmed shutdown-path fixes and timestamp alignment: preserve opt9 OP flags; report/retain failed shutdown, bounded idle retry and PMIC recovery before restart; command phase timestamps, no waveform/voltage/pin sequencing change. Local only, no flash/publication/push."
+    },
+    "components/sy7636a/include/sy7636a.h": {
+      "sha256": "e9483f849eccd0d97500bcae6efc960befeb8f5c3e8f610203df53d22b12ecea",
+      "reason": "2026-11-22 user requests confirmed shutdown-path fixes and timestamp alignment: preserve opt9 OP flags; report/retain failed shutdown, bounded idle retry and PMIC recovery before restart; command phase timestamps, no waveform/voltage/pin sequencing change. Local only, no flash/publication/push."
     }
   },
   "source_archive": "s31-final-2026-11-21"

@@ -19,7 +19,7 @@ assert 'app_settings_book_animation' not in header
 assert 'present_page_animation' not in book
 assert '"翻页动画"' not in book
 assert 'return paint_reading(ctx, MODE_GL16);' in book
-assert 'static uint8_t s_shelf_style = 2;' in source
+assert 'static uint8_t s_shelf_style = 6;' in source
 assert 'NVS_KEY_SHELF_V22' in source
-print("animation removal and acrylic shelf default contracts passed")
+print("animation removal and liquid shelf default contracts passed")
 PY

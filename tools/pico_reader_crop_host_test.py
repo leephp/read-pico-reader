@@ -19,13 +19,15 @@ unit = PREFIX + text[start:end] + r'''
 #define ESP_LOGI(...) ((void)0)
 #define _swap_int(a,b) do{int saved=(a);(a)=(b);(b)=saved;}while(0)
 enum EpdRotation{EPD_ROT_LANDSCAPE,EPD_ROT_PORTRAIT,EPD_ROT_INVERTED_LANDSCAPE,EPD_ROT_INVERTED_PORTRAIT};
-enum EpdDrawMode{MODE_DU=1,MODE_GL16=5,MODE_PACKING_1PPB_DIFFERENCE=0x100};
+enum EpdDrawMode{MODE_DU=1,MODE_GC16=2,MODE_GL16=5,MODE_PACKING_1PPB_DIFFERENCE=0x100};
 enum EpdDrawError{EPD_DRAW_SUCCESS,EPD_DRAW_EMPTY_LINE_QUEUE};
 typedef struct{int unused;}EpdWaveform;
 typedef struct{uint8_t *front_fb,*back_fb,*difference_fb;bool *dirty_lines;uint8_t *dirty_columns;const EpdWaveform *waveform;}EpdiyHighlevelState;
 static _Alignas(16) uint8_t front[B],back[B],diff[W*H],cols[W/2],old[B];
 static bool rows[H],full,fail,same,exact;
 static int rotation,scans,checks;
+static enum EpdDrawMode test_mode=MODE_GL16;
+static uint8_t same_gray=0x99;
 static EpdRect expected;
 static int epd_height(void){return H;}
 static enum EpdRotation epd_get_rotation(void){return rotation;}
@@ -59,7 +61,7 @@ static void check(EpdRect logical){
  case 2:expected=(EpdRect){W-logical.x-logical.width,H-logical.y-logical.height,logical.width,logical.height};break;
  default:expected=(EpdRect){logical.y,H-logical.x-logical.width,logical.height,logical.width};break;
  }
- memset(back,0x99,B);memset(front,0x99,B);
+ memset(back,same_gray,B);memset(front,same_gray,B);
  // RC104 scans and commits complete physical columns in groups of 32.
  int dirty_x=expected.x;
  int right=(expected.x+expected.width+31)/32*32;
@@ -69,12 +71,65 @@ static void check(EpdRect logical){
  if(!same)front[expected.y*W/2+dirty_x/2]^=(uint8_t)(7u<<(4*(dirty_x&1)));
  memcpy(old,back,B);scans=0;
  EpdiyHighlevelState h={front,back,diff,rows,cols,NULL};
- assert(hl_update_area(&h,MODE_GL16,25,logical,full,exact,0,0)==(fail?EPD_DRAW_EMPTY_LINE_QUEUE:EPD_DRAW_SUCCESS));
+ assert(hl_update_area(&h,test_mode,25,logical,full,exact,0,0)==(fail?EPD_DRAW_EMPTY_LINE_QUEUE:EPD_DRAW_SUCCESS));
  assert(scans==1);
  for(int y=0;y<H;++y)for(int x=0;x<W;++x){
   assert(pixel(back,x,y)==(!fail&&inside(x,y)?pixel(front,x,y):pixel(old,x,y)));
  }
  ++checks;
+}
+// Unlike isolated crop cases, retain digital history across A/B page turns,
+// periodic cleanup, independent footer updates, and a failed scan/retry.
+static void sequence_scan(EpdiyHighlevelState *h,EpdRect logical,int mode,bool force,bool error){
+ switch(rotation){
+ case 0:expected=logical;break;
+ case 1:expected=(EpdRect){W-logical.y-logical.height,logical.x,logical.height,logical.width};break;
+ case 2:expected=(EpdRect){W-logical.x-logical.width,H-logical.y-logical.height,logical.width,logical.height};break;
+ default:expected=(EpdRect){logical.y,H-logical.x-logical.width,logical.height,logical.width};break;
+ }
+ full=force;fail=error;memcpy(old,back,B);scans=0;
+ assert(hl_update_area(h,mode,25,logical,force,true,0,0)==
+        (error?EPD_DRAW_EMPTY_LINE_QUEUE:EPD_DRAW_SUCCESS));
+ assert(scans<=1&&(!force||scans==1));
+ for(int y=0;y<H;++y)for(int x=0;x<W;++x)
+  assert(pixel(back,x,y)==(!error&&inside(x,y)?pixel(front,x,y):pixel(old,x,y)));
+ ++checks;
+}
+static void sequence_tests(void){
+ EpdiyHighlevelState h={front,back,diff,rows,cols,NULL};
+ unsigned transitions=0;
+ const int policies[]={0,5,15};
+ for(rotation=0;rotation<4;++rotation)for(unsigned policy=0;policy<3;++policy)for(int direction=0;direction<3;++direction){
+  int width=(rotation&1)?H:W,height=(rotation&1)?W:H;
+  EpdRect frame={0,0,width,height},body={0,80,width,height-128};
+  EpdRect footer={0,height-48,width,48},status={0,0,width,80};
+  memset(front,0xff,B);memset(back,0xff,B);memset(diff,0xa5,sizeof(diff));
+  sequence_scan(&h,frame,MODE_GC16,true,false);
+  for(int turn=1;turn<=20;++turn){
+   // Traverse forward, backward, or alternate deterministic targets with all sixteen grays.
+   // The target is rebuilt; back is never reset between operations.
+   memset(front,0xff,B);
+   for(int y=0;y<H;++y)for(int x=0;x<W;++x){
+    int page=direction==0?30+turn:direction==1?30-turn:30+(turn&1);
+    unsigned shade=((x/9+y/7+page*5)&15);
+    if((x%43)<19&&(y%37)<18){
+     unsigned shift=4*(x&1);
+     front[y*W/2+x/2]=(uint8_t)((front[y*W/2+x/2]&~(15u<<shift))|(shade<<shift));
+    }
+   }
+   bool cleanup=policies[policy]&&turn%policies[policy]==0;
+   bool error=turn==7;
+   sequence_scan(&h,cleanup?body:frame,cleanup?MODE_GC16:MODE_GL16,true,error);
+   if(error)sequence_scan(&h,frame,MODE_GC16,true,false);
+   // Status/footer may follow the body and must not corrupt the next turn's history.
+   sequence_scan(&h,footer,MODE_GL16,false,false);
+   sequence_scan(&h,status,MODE_GL16,false,false);
+   // Force a same-page cleanup as well as changed-page periodic cleanup.
+   if(turn==12)sequence_scan(&h,frame,MODE_GC16,true,false);
+   ++transitions;
+  }
+ }
+ printf("PASS: %u forward/backward/alternating-page transitions retain exact digital history across policies 0/5/15, metadata, manual cleanup and failed-scan retries\n",transitions);
 }
 int main(void){
  for(int e=0;e<2;++e){exact=e;
@@ -91,6 +146,13 @@ int main(void){
  }
  full=true;fail=false;same=true;
  for(rotation=1;rotation<4;rotation+=2)check((EpdRect){0,0,H,1204});
+ // Periodic native GC16 drives all unchanged whites/grays, including both full and exact entry crops.
+ for(int g=0;g<2;++g)for(int e=0;e<2;++e)for(rotation=0;rotation<4;++rotation){
+  same_gray=g?0xff:0x99;exact=e;test_mode=MODE_GC16;
+  check((rotation&1)?(EpdRect){0,80,H,1088}:(EpdRect){80,0,1088,H});
+  check((rotation&1)?(EpdRect){0,0,H,W}:(EpdRect){0,0,W,H});
+ }
+ test_mode=MODE_GL16;
  // No-op/empty updates must not submit a scan or alter either framebuffer.
  EpdiyHighlevelState h={front,back,diff,rows,cols,NULL};
  rotation=0;scans=0;
@@ -112,6 +174,7 @@ int main(void){
  expected=(EpdRect){1051,33,7,1};
  assert(hl_update_area(&h,MODE_DU,25,(EpdRect){H-34,1051,1,7},false,true,0,0)==EPD_DRAW_SUCCESS);
  assert(pixel(back,1051,33)==0&&pixel(back,1057,33)==0);
+ sequence_tests();
  puts("PASS: text and footer sharing a32-column group retain independent, exact physical history");
  puts("PASS: real Pico diff/highlevel 32-column scan masks and success-only commits; immersive/footer/standard crops,4 rotations,odd nibbles,narrow/aligned areas and failures");
 }

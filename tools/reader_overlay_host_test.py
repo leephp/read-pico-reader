@@ -367,6 +367,11 @@ int main(void){
  for(int style=0;style<2;++style)for(int v=0;v<2;++v){
   immersive=style;vertical=v;s_reader_panel=READER_PANEL_NONE;s_reader_fullscreen=true;
   draw_reader(fb,s_page);memcpy(original,fb,sizeof(fb));EpdRect body=body_rect();
+  // Dirty old frames must not accumulate into a new reader target (renderer only; panel physics excluded).
+  for(int repeat=0;repeat<20;++repeat){
+   memset(fb,(repeat*37)&255,sizeof(fb));draw_reader(fb,s_page);
+   assert(!memcmp(fb,original,sizeof(fb)));
+  }
   s_reader_fullscreen=false;draw_reader(fb,s_page);memcpy(standard,fb,sizeof(fb));
   assert(body_rect().y==body.y&&body_rect().height==body.height);
   assert(fb[100*684+300]==UI_NAV_BACKGROUND_GRAY&&fb[40*684+342]==0&&fb[114*684+620]==0);

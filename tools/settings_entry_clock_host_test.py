@@ -38,6 +38,7 @@ typedef struct {touch_t *touch;uint8_t *fb;void *hl;}app_ctx_t;
 static int settings_viewport_end(void){return UI_NAV_TOP;}
 #define SETTINGS_UNLOCK_ICON 18
 static unsigned wake_presses=1,switches;
+static bool app_settings_shelf_progress_badges(void){return false;}
 static unsigned app_settings_wake_presses(void){return wake_presses;}
 static void settings_switch(uint8_t *fb,int y,bool active){(void)fb;assert(y>=160&&y<UI_NAV_TOP);assert(active==(wake_presses==2));++switches;}
 static unsigned scale=100,text_calls,icons,arrows,measures,profile_calls;
@@ -59,6 +60,7 @@ static int s_view=READING;
 static char *s_text="book";
 static char s_reader_notice[64];
 static bool s_reader_fullscreen,immersive,s_reader_clock_pending,wallpaper;
+static bool app_book_status_bar_visible(void){return true;}
 static bool app_settings_reader_immersive(void){return immersive;}
 static int64_t s_reader_clock_minute=-1,s_reader_clock_painted_minute=-1,minute=100;
 enum {READER_PANEL_NONE,READER_PANEL_BACKGROUND_PREVIEW};

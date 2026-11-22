@@ -107,6 +107,9 @@ static bool ui_rect_hit(EpdRect r,int x,int y){return x>=r.x&&y>=r.y&&x<r.x+r.wi
 #define BOOK_IMAGE_FILE_MAX (50u*1024u*1024u)
 static bool book_image_file_dimensions(const char *path,bool png,unsigned *w,unsigned *h){(void)path;return book_image_dimensions((const uint8_t*)"IMG!",4,png,w,h);}
 static bool book_image_file_grayscale(const char *path,bool png,unsigned w,unsigned h,uint8_t *out){(void)path;return book_image_grayscale((const uint8_t*)"IMG!",4,png,w,h,out);}
+static bool book_image_xth_dimensions(const char *path,unsigned *w,unsigned *h){(void)path;*w=120;*h=200;return true;}
+static bool book_image_file_xth_grayscale(const char *path,unsigned w,unsigned h,uint8_t *out){return book_image_file_grayscale(path,false,w,h,out);}
+
 """
 tail = r"""
 static void image_fixture(const char *name){FILE *f=fopen(name,"wb");assert(f);assert(fwrite("IMG!",1,4,f)==4);assert(!fclose(f));}

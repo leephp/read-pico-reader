@@ -122,6 +122,23 @@ int main(void){touch_t touch={0};app_ctx_t ctx={.touch=&touch};
   reader_prefetch_end(true);assert(work==old+36&&s_next_page==(int)s_page+1);
   ++s_page;old=work;assert(reader_prefetch_resume(s_page)&&work==old);
  }
+ // Repeated backward turns must reject a future cache and rebuild only the new next page.
+ // Verify the unused white tail too: no pixels from the prior cached target may accumulate.
+ for(unsigned turn=0;turn<40;++turn){
+  --s_page;assert(!reader_prefetch_resume(s_page));
+  bool started=kick_prep();
+  if(started){assert(xSemaphoreTake(s_prep_done,portMAX_DELAY));xSemaphoreGive(s_prep_done);}
+  reader_prefetch_end(started);
+  assert(s_next_page==(int)s_page+1);
+  for(unsigned row=0;row<36;++row)assert(s_next_fb[row]==(uint8_t)(s_page+1+row));
+  for(unsigned row=36;row<fb_bytes();++row)assert(s_next_fb[row]==0xff);
+ }
+ for(unsigned pair=0;pair<40;++pair){
+  ++s_page;unsigned prior=work;assert(reader_prefetch_resume(s_page)&&work==prior);
+  --s_page;assert(!reader_prefetch_resume(s_page));assert(!kick_prep());
+ }
+ assert(kick_prep()==false); // The last backward target's next page is already complete.
+ invalidate_prep();
  assert(kick_prep());reader_prefetch_end(true);
  unsigned old=work;ctx.consumed=true;reader_prefetch_idle(&ctx);assert(work==old);ctx.consumed=false;
  touch.touched=true;reader_prefetch_idle(&ctx);assert(work==old);touch.touched=false;
@@ -134,7 +151,7 @@ int main(void){touch_t touch={0};app_ctx_t ctx={.touch=&touch};
  s_toolbar=true;assert(!kick_prep());s_toolbar=false;s_reader_panel=READER_PANEL_FONT;assert(!kick_prep());s_reader_panel=READER_PANEL_NONE;
  s_page=499;assert(!kick_prep());
  destroy_worker();free(s_next_fb);
- puts("PASS: real-thread scan overlap, row-boundary stop instead of whole-page join, partial-page continuation, 40 rapid cache hits, input/navigation priority and generation/OOM/image/background/panel guards");
+ puts("PASS: real-thread scan overlap, row-boundary stop instead of whole-page join, partial-page continuation, 40 rapid cache hits, 40 backward turns, 40 alternating pairs with white-tail isolation, input/navigation priority and generation/OOM/image/background/panel guards");
 }
 '''
 with tempfile.TemporaryDirectory() as d:

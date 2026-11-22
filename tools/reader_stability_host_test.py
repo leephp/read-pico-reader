@@ -36,6 +36,9 @@ static void test_free(void *p){if(p)live=0;free(p);}
 static bool book_image_file_dimensions(const char *p,bool png,unsigned *w,unsigned *h){(void)p;(void)png;*w=source_w;*h=source_h;return true;}
 static uint8_t sample(unsigned x,unsigned y){return (uint8_t)(x*47u+y*37u);}
 static bool book_image_file_grayscale(const char *p,bool png,unsigned w,unsigned h,uint8_t *out){(void)p;(void)png;++decodes;if(decode_fail)return false;for(unsigned y=0;y<h;++y)for(unsigned x=0;x<w;++x)out[(size_t)y*w+x]=sample(x,y);return true;}
+// XTH is outside this JPG/PNG fixture; reject it explicitly rather than leaving missing symbols.
+static bool book_image_xth_dimensions(const char *p,unsigned *w,unsigned *h){(void)p;(void)w;(void)h;return false;}
+static bool book_image_file_xth_grayscale(const char *p,unsigned w,unsigned h,uint8_t *out){(void)p;(void)w;(void)h;(void)out;return false;}
 static int epd_width(void){return device_w;}
 static int epd_height(void){return device_h;}
 static int epd_get_rotation(void){return rotation;}

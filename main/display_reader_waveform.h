@@ -16,6 +16,8 @@ const EpdWaveform* display_reader_fast_text_waveform(void);
 /// 两板普通翻页分别派生本板波形：Pico等灰保持、变白补四相；S31沿Moku GL37补六相目标白。
 /// Ordinary uses board-native profiles: Pico holds equal grays and adds four changed-white phases; S31 retains Moku GL37 plus six white-target phases.
 const EpdWaveform* display_reader_soft_turn_waveform(void);
+/// Periodic GC16 followed by 12 white-target and 4 black-target phases; intermediate grays hold.
+const EpdWaveform* display_reader_cleanup_waveform(void);
 /// 只把目标为白的像素再补白，其他像素保持；用于翻页后状态栏/进度条的抗积灰。
 /// Push only white targets again and hold everything else; anti-ghost touch for status/footer bars.
 const EpdWaveform* display_reader_white_push_waveform(void);

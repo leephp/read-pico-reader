@@ -25,7 +25,7 @@ static int s_margin;
 static bool app_settings_reader_immersive(void){return immersive;}
 static bool app_settings_book_vertical(void){return vertical;}
 static unsigned s_book_indent_adjust=20;
-static void nvs_put_u8(const char *key,uint8_t v){(void)key;assert(v==s_book_indent_adjust);}
+static bool nvs_put_u8(const char *key,uint8_t v){(void)key;(void)v;return true;}
 #define NVS_KEY_BOOK_INDENT_ADJUST "bk_indent_adj"
 '''
 u+='\n'.join(line for line in (r/'main/ui/ui_reader_layout.h').read_text().splitlines() if not line.startswith(('#include','#pragma'))) + '\n'

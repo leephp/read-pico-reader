@@ -38,10 +38,11 @@ static int typography;
 static uint8_t stored_tracking=207,stored_para=25;
 #define NVS_KEY_BOOK_TRACK "bk_track"
 #define NVS_KEY_BOOK_PARA "bk_para"
-static void nvs_put_u8(const char *key,uint8_t value){
+static bool nvs_put_u8(const char *key,uint8_t value){
  ++writes;
  if(!strcmp(key,NVS_KEY_BOOK_TRACK))stored_tracking=value;
  else {assert(!strcmp(key,NVS_KEY_BOOK_PARA));stored_para=value;}
+ return true;
 }
 static uint8_t app_settings_book_line_spacing(void){return 130;}
 static int reader_ui_extra(int pixels){(void)pixels;return 0;}
@@ -67,9 +68,14 @@ static void invalidate_prep(void){++invalidations;}
 static void book_layout_set_typography(int pixels){typography=pixels;}
 static bool book_layout_build_blocks(const char *text,size_t length,const void *blocks,size_t count,EpdRect rect,int px){
  assert(text==s_text&&length==s_text_len&&blocks==s_blocks&&count==s_block_count);
- assert(rect.width==636&&px==s_px);++builds;return !fail_layout;
+ assert(rect.width==636&&px==s_px);++builds;bool failed=fail_layout;fail_layout=false;return !failed;
 }
 static void save_progress(void){++saves;}
+enum {SHELF};static int s_view;static char s_message[128];
+static void free_book(void){s_text=NULL;}
+static void copy_text(char*d,size_t n,const char*s){snprintf(d,n,"%s",s);}
+// Failure behavior is exercised by reader_settings_failure_host_test.
+static app_redraw_t reader_restore_saved_layout(size_t off){(void)off;assert(false);return APP_REDRAW_PAGE;}
 '''
 header = (root / 'main/settings.h').read_text()
 for name in ('APP_BOOK_TRACK_MIN', 'APP_BOOK_TRACK_MAX', 'APP_BOOK_TRACK_COUNT', 'APP_BOOK_PARAGRAPH_COUNT'):

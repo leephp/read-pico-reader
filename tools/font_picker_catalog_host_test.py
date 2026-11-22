@@ -31,7 +31,7 @@ choose = branch(s, 'if (s_page == SETTINGS_SYSTEM_FONT) {', 'static app_redraw_t
 reader_choose = branch(r, 'if (s_reader_panel == READER_PANEL_FONT_PICKER)', 'static app_redraw_t reader_panel_action(')
 reader_swipe = branch(r, 'if (s_view == READING && s_reader_panel == READER_PANEL_FONT_PICKER &&', 'static app_redraw_t gesture_event(')
 layout = s[s.index('typedef struct {\n    EpdRect size, preview;'):s.index('static system_font_layout_t system_font_layout(')]
-unit = r'''
+unit = '#include \"' + str(root / 'main/ui/ui_text_fit.h') + '\"\n' + r'''
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -73,6 +73,7 @@ static bool ui_rect_hit(EpdRect q,int x,int y){return x>=q.x&&x<q.x+q.width&&y>=
 static void settings_card(uint8_t*f,EpdRect q,int radius,int fill,int edge){(void)f;(void)radius;(void)fill;(void)edge;
  if(capture_rows&&q.x==48&&q.width==588){assert(rows<16);boxes[rows++]=q;assert(q.y>=292&&q.y+q.height<956);}}
 static void section(uint8_t*f,int y,const char*t){(void)f;(void)y;capture_rows=!strcmp(t,"选择字体");}
+static int ui_text_fixed_width_px(int px,const char *text){return (int)strlen(text)*px/2;}
 static const char*system_font_label(const char*p){return p;}
 static void settings_fit_text(char*p,int px,int width){(void)p;(void)px;(void)width;}
 static void back_header(uint8_t*f,const char*t){(void)f;(void)t;}

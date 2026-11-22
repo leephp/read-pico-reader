@@ -187,7 +187,7 @@ int main(int argc,char **argv){
    draw_reading_font_name(pixels,box,text);assert(has_ink(pixels,sizeof(pixels),15)&&!ttf_get_antialias()&&ttf_font_selected()==0);
    uint8_t actual[sizeof(pixels)];memcpy(actual,pixels,sizeof(pixels));
    int px=ui_text_effective_px(27),above,below;char fitted[64];strcpy(fitted,text);
-   while(ttf_text_width_px(px,fitted)>box.width){size_t n=strlen(fitted)-1;while(n&&((unsigned char)fitted[n]&0xc0)==0x80)--n;fitted[n]=0;}
+   ui_text_fit_middle(fitted,px,box.width,ttf_text_width_px);
    ttf_measure_line_px(px,fitted,&above,&below);ttf_set_antialias(true);memset(pixels,255,sizeof(pixels));
    ttf_draw_text_px(pixels,box.x,box.y+box.height/2+(above-below)/2,px,fitted,EPD_DRAW_ALIGN_LEFT,0,15);
    assert(!memcmp(actual,pixels,sizeof(pixels))&&opens==initial_opens&&active_fd==1);
@@ -258,7 +258,7 @@ int main(int argc,char **argv){
  puts("PASS: actual imported system/reader TTF at 32/40/48px, direct raster identity, five stroke levels with native normal identity and fixed advances, English word-space raster alignment/bounded expansion, single file/face, bounded warm cache and no duplicate font load");
 }
 '''
-    helper='static void copy_text(char *to,size_t cap,const char *from){snprintf(to,cap,"%s",from);}'+'\n'+function('draw_reading_font_name',ROOT/'main/apps/app_book.c')+'\n'
+    helper='#include \"'+str(ROOT/'main/ui/ui_text_fit.h')+'\"\n'+'static void copy_text(char *to,size_t cap,const char *from){snprintf(to,cap,"%s",from);}'+'\n'+function('draw_reading_font_name',ROOT/'main/apps/app_book.c')+'\n'
     for name in ('one_line','toc_title'):
         helper += function(name,ROOT/'main/apps/book_toc.c')+'\n'
     unit=unit.replace('int main(int argc,char **argv){',helper+'int main(int argc,char **argv){')

@@ -428,21 +428,15 @@ int main(void) {
     assert(ctx.request_return && cover_wifi_returns == 3 && cover_wifi_ready);
     transfer_on_exit(&ctx);
 
-    // The connected general-purpose STA is replaced on Continue, with saved credentials.
+    // Pico reuses the connected STA on Continue, without requesting a reconnect.
     ctx.request_return = false;
     test_status = ready;
     test_status.cover_lookup = false;
     app_transfer_request_cover_wifi();
     on_enter(&ctx);
     tap(&ctx, network_control_rect(6));
-    assert(!ctx.request_return && s_network_connect_pending && cover_wifi_returns == 3);
-    test_status = (read_pico_transfer_status_t){.mode=READ_PICO_TRANSFER_MODE_STA,
-        .state=READ_PICO_TRANSFER_STARTING, .cover_lookup=true};
-    assert(network_ui_tick(&ctx) == APP_REDRAW_PAGE && test_cover_profile_requested);
-    assert(!ctx.request_return);
-    test_status = ready;
-    assert(network_ui_tick(&ctx) == APP_REDRAW_NONE && ctx.request_return &&
-           cover_wifi_returns == 4 && cover_wifi_ready);
+    assert(ctx.request_return && !s_network_connect_pending &&
+           cover_wifi_returns == 4 && cover_wifi_ready && test_status.network_ready);
     transfer_on_exit(&ctx);
     puts("transfer_ui_host_test: PASS");
 }

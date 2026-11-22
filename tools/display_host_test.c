@@ -80,6 +80,9 @@ static unsigned blind_pushes, repair_delays, poweroffs;
 static bool checking_repair;
 static bool drive_active, no_change;
 static unsigned drive_releases, release_failures;
+static unsigned off_failures;
+static bool off_pending;
+bool read_pico_rails_on(void) {return off_pending;}
 static int64_t now_us = 1000000;
 static const EpdWaveform *waveform_at_draw;
 static enum EpdDrawError water_result;
@@ -111,7 +114,8 @@ bool read_pico_epd_release_drive(void) {
     drive_active = false;
     return true;
 }
-void epd_poweroff(void) { if (checking_repair) assert(ota_display_depth); ++poweroffs; drive_active = false; }
+void epd_poweroff(void) { if (checking_repair) assert(ota_display_depth); ++poweroffs; drive_active = false;
+    off_pending=off_failures!=0;if(off_failures)--off_failures; }
 EpdRect epd_full_screen(void) { return (EpdRect){0,0,1216,684}; }
 void vTaskDelay(uint32_t ticks) {
     assert(checking_repair && ota_display_depth);
@@ -369,7 +373,36 @@ int main(void) {
     release_failures = 0;
     assert(draws == old_draws && clears == old_clears && !ota_display_depth);
     assert(!memcmp(front, target, FB_BYTES) && !memcmp(back, target, FB_BYTES));
-    puts("reader idle rails: eight-second power-off and neutral-write fault timeout passed");
+    // Reading has its own three-second deadline; new output extends it, idle does not repaint.
+    display_set_reader_rails(true);
+    now_us = INT64_C(4000000000);
+    rails_keepalive();
+    old_offs = poweroffs;
+    rails_idle_check(4002999); assert(poweroffs == old_offs);
+    now_us = INT64_C(4002500000);
+    rails_keepalive();
+    rails_idle_check(4003000); assert(poweroffs == old_offs);
+    rails_idle_check(4005499); assert(poweroffs == old_offs);
+    rails_idle_check(4005500); assert(poweroffs == old_offs + 1);
+    rails_idle_check(4010000); assert(poweroffs == old_offs + 1);
+    assert(draws == old_draws && clears == old_clears && !ota_display_depth);
+    assert(!memcmp(front, target, FB_BYTES) && !memcmp(back, target, FB_BYTES));
+    display_set_reader_rails(false);
+    now_us = INT64_C(5000000000);rails_keepalive();
+    old_offs=poweroffs;off_failures=2;
+    now_us=INT64_C(5008000000);rails_idle_check(5008000);
+    assert(off_pending&&poweroffs==old_offs+1);
+    rails_idle_check(5008999);assert(poweroffs==old_offs+1);
+    now_us=INT64_C(5009000000);rails_idle_check(5009000);
+    assert(off_pending&&poweroffs==old_offs+2);
+    now_us=INT64_C(5010000000);rails_idle_check(5010000);
+    assert(!off_pending&&poweroffs==old_offs+3);
+    rails_idle_check(5020000);assert(poweroffs==old_offs+3);
+    assert(draws==old_draws&&clears==old_clears&&!ota_display_depth);
+    assert(!memcmp(front,target,FB_BYTES)&&!memcmp(back,target,FB_BYTES));
+    puts("failed shutdown: one-second retries without scans; stop after success passed");
+    puts("reader idle rails: three-second deadline, extension on output, and no idle repaint passed");
+    puts("default idle rails: eight-second power-off and neutral-write fault timeout passed");
     puts("idle drive release: no-change output, bounded I2C retry, no extra scans and unchanged HV burst timeout passed");
     puts("display recovery: front retained, locked blind panel repair, single final frame, retry/failure recovery and bulk prefill passed");
 }
