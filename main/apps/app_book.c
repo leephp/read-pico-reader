@@ -1,4 +1,7 @@
 /*
+ * 用户2026-11-22授权：普通纯文字连翻保留37相前缀，停手后统一白12/黑4；扫描时采集输入。
+ * User2026-11-22: ordinary text retains its37-phase prefix, defers white12/black4 until idle,
+ * and captures input during scans. Full cleanup, image/ripple/FastBW and power sequencing remain.
  * 用户2026-11-11追加：补齐加载提示、贴顶小收藏、封面进度开关、调色板同页入口及进度/升降排序；保留已完成首页与阅读功能。
  * 阅读修订取代旧自动暂停约束：0–10秒±1秒，切换全屏/操作不关闭开关，安全菜单暂缓计时；离书/锁屏/书末保留安全停止。两板原按键页、状态栏避让、控件对齐及黑框提示一并修复。
  * User2026-11-11: complete the remaining shelf previews and retain existing Home/reader work. Auto turns use0–10s steps, keep enabled across fullscreen/manual input, defer in menus and stop at lifecycle/end boundaries. Restore native board-specific key pages, aligned controls, protected touch headers and black notice outlines.
@@ -4710,8 +4713,10 @@ static bool present(app_ctx_t* ctx, app_redraw_t redraw) {
             // 普通翻页整屏推白并重推黑，状态栏和页脚也一起擦，避免阳光下淡墨。
             // Ordinary turns push white and re-drive black across the whole panel, metadata included,
             // so nothing stays faint in sunlight.
-            err = update_display_reader_area(ctx->hl, display_reader_soft_turn_waveform(), s_mode,
-                                             (EpdRect){0, 0, UI_LOCK_WIDTH, UI_LOCK_HEIGHT}, true);
+            err = !book_layout_page_image_count(s_page) && !app_settings_book_background_path()[0]
+                ? update_display_reader_continue(ctx->hl)
+                : update_display_reader_area(ctx->hl, display_reader_soft_turn_waveform(), s_mode,
+                    (EpdRect){0, 0, UI_LOCK_WIDTH, UI_LOCK_HEIGHT}, true);
             whole_panel = true;
         } else if (separate_metadata) {
             err = update_display_reader_area(ctx->hl,
@@ -4775,7 +4780,11 @@ static bool present(app_ctx_t* ctx, app_redraw_t redraw) {
         if(reader_entry)s_turns=0;
     }
     if (err == EPD_DRAW_SUCCESS) {
-        if (separate_metadata) (void)present_reader_footer(ctx);
+        if (separate_metadata && display_reader_settle_pending()) {
+            // Do not let an immediate footer update flush the deferred tail on every turn.
+            s_reader_footer_pending = true;
+            s_reader_footer_due_ms = esp_timer_get_time()/1000 + 800;
+        } else if (separate_metadata) (void)present_reader_footer(ctx);
         else if (redraw == APP_REDRAW_PAGE || redraw == APP_REDRAW_FULL || reader_entry)
             s_reader_footer_pending = false;
     }

@@ -107,7 +107,7 @@ void rails_idle_check(int64_t now_ms) {
     // Retry a transient I2C failure at 50ms intervals; stop bus access on success without repainting.
     if (drive_release_retry_ms && now_ms >= drive_release_retry_ms)
         drive_release_retry_ms = read_pico_epd_release_drive() ? 0 : now_ms + 50;
-    if (rails_deadline_ms != 0 && now_ms >= rails_deadline_ms) {
+    if (!display_reader_settle_pending() && rails_deadline_ms != 0 && now_ms >= rails_deadline_ms) {
         rails_deadline_ms = 0;
         drive_release_retry_ms = 0;
         epd_poweroff();
@@ -767,7 +767,47 @@ int64_t local_display_elapsed_us;
 
 // 连续相位全部完成后，back已是真实黑白画面；不因尚未补灰阶而多做一次整屏GC16。
 // Once continuous phases finish, back is the real binary frame; pending gray restoration alone does not require full GC16.
-static bool display_needs_full(void) { return s_full_refresh_requested; }
+#ifndef KIIKO_READER_DEFERRED_SETTLE
+#define KIIKO_READER_DEFERRED_SETTLE 1
+#endif
+#define READER_SETTLE_IDLE_MS 500
+static EpdiyHighlevelState *s_reader_settle_hl;
+static int64_t s_reader_settle_due;
+static bool s_reader_continuing;
+
+// Only the committed image may be settled: front may already contain a menu or the next page.
+static void reader_settle_flush(void) {
+    EpdiyHighlevelState *hl = s_reader_settle_hl;
+    if (!hl) return;
+    s_reader_settle_hl = NULL;
+    const EpdWaveform *wave = display_reader_settle_waveform();
+    if (!wave || s_full_refresh_requested) { s_full_refresh_requested = true; return; }
+    EpdiyHighlevelState committed = *hl;
+    committed.front_fb = hl->back_fb;
+    epd_poweron();
+    use_scan_for(wave, MODE_GL16);
+    epd_hl_waveform(&committed, wave);
+    enum EpdDrawError err = epd_hl_update_area_full_exact(&committed, MODE_GL16, 25,
+        (EpdRect){0,0,epd_rotated_display_width(),epd_rotated_display_height()});
+    if (err != EPD_DRAW_SUCCESS) s_full_refresh_requested = true;
+    rails_keepalive();
+}
+
+bool display_reader_settle_pending(void) { return s_reader_settle_hl != NULL; }
+void display_reader_settle_poll(int64_t now_ms, bool input_pending) {
+    bool held = pico_online_display_begin();
+    if (s_reader_settle_hl) {
+        if (input_pending) s_reader_settle_due = now_ms + READER_SETTLE_IDLE_MS;
+        else if (now_ms >= s_reader_settle_due) reader_settle_flush();
+    }
+    pico_online_display_end(held);
+}
+
+// All other output completes the outstanding tail before changing pixels or history.
+static bool display_needs_full(void) {
+    if (!s_reader_continuing) reader_settle_flush();
+    return s_full_refresh_requested;
+}
 
 // 统一硬件出口，递归调用也必须覆盖整个扫描过程。/ Guard complete scans, including recursive fallback paths.
 enum EpdDrawError update_display_mode(
@@ -829,6 +869,7 @@ enum EpdDrawError update_display_from_white(EpdiyHighlevelState* hl) {
 enum EpdDrawError update_display_white(EpdiyHighlevelState* hl) {
     LATENCY_DISPLAY_BEGIN();
     bool held = pico_online_display_begin();
+    s_reader_settle_hl = NULL;
     s_full_refresh_requested = false;
     enum EpdDrawError result = update_display_white_unlocked(hl);
     pico_online_display_end(held);
@@ -839,6 +880,7 @@ enum EpdDrawError update_display_white(EpdiyHighlevelState* hl) {
 enum EpdDrawError update_display_full(EpdiyHighlevelState* hl) {
     LATENCY_DISPLAY_BEGIN();
     bool held = pico_online_display_begin();
+    s_reader_settle_hl = NULL;
     enum EpdDrawError result = update_display_full_unlocked(hl);
     pico_online_display_end(held);
     LATENCY_DISPLAY_END();
@@ -866,6 +908,7 @@ enum EpdDrawError display_panel_repair(EpdiyHighlevelState* hl) {
     if (!hl || !hl->front_fb || !hl->back_fb) return EPD_DRAW_INVALID_CROP;
     LATENCY_DISPLAY_BEGIN();
     bool held = pico_online_display_begin();
+    s_reader_settle_hl = NULL; // Blind repair replaces any deferred reader tail.
     continuous_du_reset();
     s_full_refresh_requested = false;
     display_main_transition_cancel();
@@ -1004,6 +1047,27 @@ enum EpdDrawError update_display_reader_area(EpdiyHighlevelState *hl,
     }
     pico_online_display_end(held);
     return result;
+}
+
+enum EpdDrawError update_display_reader_continue(EpdiyHighlevelState *hl) {
+    bool held = pico_online_display_begin();
+    const EpdWaveform *wave = KIIKO_READER_DEFERRED_SETTLE
+        ? display_reader_continue_waveform() : NULL;
+    const bool recovery = s_full_refresh_requested || s_main_fault;
+    s_reader_continuing = wave != NULL && !recovery;
+    enum EpdDrawError err = update_display_reader_area(hl,
+        wave ? wave : display_reader_soft_turn_waveform(), MODE_GL16,
+        (EpdRect){0,0,epd_rotated_display_width(),epd_rotated_display_height()}, true);
+    s_reader_continuing = false;
+    if (err == EPD_DRAW_SUCCESS && wave && !recovery) {
+        s_reader_settle_hl = hl;
+        s_reader_settle_due = esp_timer_get_time()/1000 + READER_SETTLE_IDLE_MS;
+    } else {
+        s_reader_settle_hl = NULL;
+        if (err != EPD_DRAW_SUCCESS) s_full_refresh_requested = true;
+    }
+    pico_online_display_end(held);
+    return err;
 }
 
 enum EpdDrawError update_display_water_turn(EpdiyHighlevelState* hl, EpdRect area,

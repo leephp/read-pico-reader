@@ -1,4 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0
+ * 用户2026-11-22授权：普通纯文字连翻保留37相前缀，停手后统一白12/黑4；扫描时采集输入。
+ * User2026-11-22: ordinary text retains its37-phase prefix, defers white12/black4 until idle,
+ * and captures input during scans. Full cleanup, image/ripple/FastBW and power sequencing remain.
  * 中文：文字水波纹的柔和灰边，保留抗锯齿目标、驱动计数和周期清残影。
  * English: Soften gray-edge transients on text ripple turns, preserving antialiased targets,
  * pulse counts and periodic cleanup.
@@ -135,6 +138,36 @@ const EpdWaveform* display_reader_soft_turn_waveform(void) {
     s_soft_waveform.temp_intervals = E0470_WAVEFORM.temp_intervals;
     s_soft_ready = true;
     return &s_soft_waveform;
+}
+
+// 用户2026-11-22授权：连续翻页保留原灰阶前缀，额外白12/黑4在停手后执行。
+// Keep the calibrated prefix; defer only the additional white12/black4 tail.
+const EpdWaveform* display_reader_continue_waveform(void) {
+    static EpdWaveformPhases phases;
+    static const EpdWaveformPhases* ranges[] = {&phases};
+    static const EpdWaveformMode mode = {MODE_GL16, 1, ranges};
+    static const EpdWaveformMode* modes[] = {&mode};
+    static EpdWaveform waveform = {.num_modes=1, .num_temp_ranges=1, .mode_data=modes};
+    const EpdWaveform* full = display_reader_soft_turn_waveform();
+    const EpdWaveformPhases* base = e0470_waveform_phases(full, MODE_GL16);
+    if (!base || base->phases != E0470_GL16_FRAMES + 16 || base->phase_times) return NULL;
+    phases = (EpdWaveformPhases){E0470_GL16_FRAMES, base->luts, NULL};
+    waveform.temp_intervals = full->temp_intervals;
+    return &waveform;
+}
+
+const EpdWaveform* display_reader_settle_waveform(void) {
+    static EpdWaveformPhases phases;
+    static const EpdWaveformPhases* ranges[] = {&phases};
+    static const EpdWaveformMode mode = {MODE_GL16, 1, ranges};
+    static const EpdWaveformMode* modes[] = {&mode};
+    static EpdWaveform waveform = {.num_modes=1, .num_temp_ranges=1, .mode_data=modes};
+    const EpdWaveform* full = display_reader_soft_turn_waveform();
+    const EpdWaveformPhases* base = e0470_waveform_phases(full, MODE_GL16);
+    if (!base || base->phases != E0470_GL16_FRAMES + 16 || base->phase_times) return NULL;
+    phases = (EpdWaveformPhases){16, base->luts + E0470_GL16_FRAMES * 64, NULL};
+    waveform.temp_intervals = full->temp_intervals;
+    return &waveform;
 }
 
 // 自动全刷保持完整GC16前缀，再补白12相/补黑4相；中灰不追加驱动。

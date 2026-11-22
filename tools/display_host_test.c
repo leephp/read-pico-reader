@@ -49,6 +49,10 @@ enum EpdDrawError e0470_update_regions(EpdiyHighlevelState* hl, EpdRect area,
 }
 static const EpdWaveform soft_gray = {4};
 static const EpdWaveform reader_soft = {5};
+static const EpdWaveform reader_continue={6}, reader_settle={7};
+const EpdWaveform* display_reader_continue_waveform(void){return &reader_continue;}
+const EpdWaveform* display_reader_settle_waveform(void){return &reader_settle;}
+const EpdWaveform* display_reader_soft_turn_waveform(void){return &reader_soft;}
 const EpdWaveform* display_reader_text_waveform(void) {return &reader_soft;}
 const EpdWaveform* display_reader_water_waveform(void) {return &reader_soft;}
 // 本组隔离波形工厂；实际擦白LUT由pico_main_clean_host_test逐迁移覆盖。/ Isolate waveform factories here; pico_main_clean_host_test covers real whitening LUTs.
@@ -191,6 +195,47 @@ int main(void) {
     memcpy(front, target, FB_BYTES);
     memset(back, 0x55, FB_BYTES);
     EpdiyHighlevelState hl = {.front_fb = front, .back_fb = back, .waveform = &E0470_WAVEFORM};
+    // Multiple directional targets commit immediately; only the last displayed frame is settled.
+    assert(update_display_reader_continue(&hl)==EPD_DRAW_SUCCESS);
+    assert(display_reader_settle_pending() && waveform_at_draw==&reader_continue);
+    int rapid_draws=draws;
+    now_us+=100000;front[0]^=0xff;
+    assert(update_display_reader_continue(&hl)==EPD_DRAW_SUCCESS);
+    assert(draws==rapid_draws+1 && back[0]==front[0]);
+    display_reader_settle_poll(now_us/1000+499,false);
+    assert(display_reader_settle_pending() && draws==rapid_draws+1);
+    display_reader_settle_poll(now_us/1000+500,true);
+    display_reader_settle_poll(now_us/1000+999,false);
+    assert(display_reader_settle_pending());
+    uint8_t committed=back[0];front[0]^=0x55;
+    unsigned prior_offs=poweroffs;
+    rails_idle_check(now_us/1000+9000);
+    assert(poweroffs==prior_offs); // A pending tail prevents idle power-off.
+    display_reader_settle_poll(now_us/1000+1000,false);
+    assert(!display_reader_settle_pending() && draws==rapid_draws+2);
+    assert(waveform_at_draw==&reader_settle && presented[0]==committed && front[0]!=committed);
+    display_reader_settle_poll(INT64_MAX,false);assert(draws==rapid_draws+2);
+    assert(update_display_reader_continue(&hl)==EPD_DRAW_SUCCESS);
+    rapid_draws=draws;
+    assert(update_display_full(&hl)==EPD_DRAW_SUCCESS);
+    assert(!display_reader_settle_pending() && draws==rapid_draws+1);
+    assert(update_display_reader_continue(&hl)==EPD_DRAW_SUCCESS);
+    rapid_draws=draws;
+    assert(update_display_area_diff_with(&hl,&E0470_WAVEFORM,MODE_GL16,(EpdRect){0,0,16,16})==EPD_DRAW_SUCCESS);
+    assert(!display_reader_settle_pending() && draws==rapid_draws+2);
+    assert(update_display_reader_continue(&hl)==EPD_DRAW_SUCCESS);
+    next_draw_error=EPD_DRAW_OTHER_ERROR;
+    display_reader_settle_poll(INT64_MAX,false);
+    assert(!display_reader_settle_pending());
+    assert(update_display_reader_continue(&hl)==EPD_DRAW_SUCCESS);
+    assert(!display_reader_settle_pending() && last_mode==MODE_GC16);
+    next_draw_error=EPD_DRAW_OTHER_ERROR;
+    assert(update_display_reader_continue(&hl)==EPD_DRAW_OTHER_ERROR);
+    assert(!display_reader_settle_pending());
+    assert(update_display_full(&hl)==EPD_DRAW_SUCCESS);
+    memcpy(front,target,FB_BYTES);memset(back,0x55,FB_BYTES);
+    now_us=1000000;
+    puts("PASS: deferred reader compensation: ordered targets, idle postponement, committed-frame-only tail, one-shot completion, full replacement, fault recovery and power-off exclusion");
     // 局部控件刷新不推进整页清残影计数；第 40 次整页差分才升级为 GC16。
     // Local control updates do not advance cleanup; only the 40th whole-page differential promotes to GC16.
     clears = draws = full_draws = last_mode = 0;
@@ -306,6 +351,8 @@ int main(void) {
     assert(!memcmp(front,target,FB_BYTES)&&!memcmp(back,target,FB_BYTES));
     // 手动修复保留目标页和底栏，只做一次最终整屏输出；成功后局部更新不再被迫全刷。
     // Manual repair preserves the target and navigation with one final full output, then allows local updates again.
+    assert(update_display_reader_continue(&hl)==EPD_DRAW_SUCCESS);
+    assert(display_reader_settle_pending());
     checking_repair = true;
     for (int failure = 0; failure < 3; ++failure) {
         memcpy(front, target, FB_BYTES); memset(back, 0x55, FB_BYTES);
@@ -316,6 +363,7 @@ int main(void) {
         display_main_transition_arm(&hl, true, true);
         display_request_full_refresh();
         enum EpdDrawError repaired = display_panel_repair(&hl);
+        assert(!display_reader_settle_pending());
         assert(blind_pushes == 6 * 26 && repair_delays == 7 && poweroffs == 1);
         assert(!memcmp(front, target, FB_BYTES) && hl.waveform == &E0470_WAVEFORM);
         assert(draws == (failure ? 2 : 1) && full_draws == draws);

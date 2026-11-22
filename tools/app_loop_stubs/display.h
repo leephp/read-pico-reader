@@ -17,3 +17,6 @@ enum EpdDrawError update_display_gray_transition(EpdiyHighlevelState* hl,EpdRect
 #endif
 
 unsigned display_main_quality_set(unsigned);
+
+bool display_reader_settle_pending(void);
+void display_reader_settle_poll(int64_t now_ms, bool input_pending);

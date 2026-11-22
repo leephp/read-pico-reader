@@ -1,4 +1,7 @@
 /*
+ * 用户2026-11-22授权：普通纯文字连翻保留37相前缀，停手后统一白12/黑4；扫描时采集输入。
+ * User2026-11-22: ordinary text retains its37-phase prefix, defers white12/black4 until idle,
+ * and captures input during scans. Full cleanup, image/ripple/FastBW and power sequencing remain.
  * SPDX-FileCopyrightText: 2026 mindreset
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -46,6 +49,7 @@
 #include "ui_locale_format.h"
 #endif
 #include "app_loop.h"
+#include "reader_capture.h"
 #include "auto_lock.h"
 #include "crash_note.h"
 
@@ -384,7 +388,12 @@ void app_present(app_ctx_t* ctx,const app_desc_t* app,app_redraw_t redraw) {
     if (white_switch)
         white_phases = app_settings_main_fast_refresh() ? PICO_MAIN_FAST_WHITE_PHASES : shelf_switch ? 8u : 6u;
     unsigned previous = display_main_quality_set(white_phases);
+    extern const app_desc_t app_book;
+    bool capture=app==&app_book && app_book_reader_body_visible() &&
+        !ctx->request_app && redraw!=APP_REDRAW_NONE && redraw!=APP_REDRAW_DONE;
+    if(capture)reader_capture_begin(ctx->tp,ctx->touch);
     app_present_impl(ctx,app,redraw);
+    if(capture)reader_capture_end();
     display_main_quality_set(previous);
 }
 
@@ -701,6 +710,8 @@ static bool poll_media(app_ctx_t* ctx, const app_desc_t* current,
 // 锁屏前先由页面保存进度，再持久化一次恢复上下文；不在翻页或点击时写入。
 // Flush page progress before persisting one lock checkpoint; never write it on page turns or taps.
 static void prepare_lock(app_ctx_t *ctx, const app_desc_t *current, bool feedback) {
+    reader_capture_clear();
+    display_reader_settle_poll(INT64_MAX, false);
     app_book_shelf_prefetch_cancel();
     if (feedback) app_lock_feedback(ctx->hl);
     if (current->on_before_lock) current->on_before_lock(ctx);
@@ -850,10 +861,18 @@ void app_loop_run(const app_loop_config_t* config) {
         cst836u_touch_t touch = s_last_raw;
         esp_err_t err = ESP_OK;
         const int64_t touch_now_ms = esp_timer_get_time() / 1000;
+        int64_t touch_sample_ms=touch_now_ms;
+        bool capture_cancel=false;
+        extern const app_desc_t app_book;
+        if(current!=&app_book || !app_book_reader_body_visible() || menu_open || power_dialog_open || s_quick.open)
+            reader_capture_clear();
+        bool captured=reader_capture_take(&touch,&touch_sample_ms,&capture_cancel);
+        if(captured) {s_last_raw=touch;s_touch_poll_ms=touch_now_ms;}
+        if(capture_cancel){cancel_gesture(&ctx,current,&gesture);held_key=-1;was_touched=false;}
         // 按住时每100ms 兜底确认松开，空闲时每500ms 兜底确认按下。
         // Confirm a release every100ms while pressed and a press every500ms while idle.
         const int64_t touch_interval = s_last_raw.touched ? 100 : 500;
-        if (cst836u_irq_pending(config->tp) || touch_now_ms - s_touch_poll_ms >= touch_interval) {
+        if (!captured && (cst836u_irq_pending(config->tp) || touch_now_ms - s_touch_poll_ms >= touch_interval)) {
             cst836u_touch_t fresh = { 0 };
             err = cst836u_read(config->tp, &fresh);
             s_touch_poll_ms = touch_now_ms;
@@ -1184,15 +1203,23 @@ void app_loop_run(const app_loop_config_t* config) {
         }
         if (!pinch_input_owned && !power_input_owned && !quick_input_owned && !menu_open && current->on_gesture && err == ESP_OK) {
             ui_gesture_event_t event;
+            const int64_t dispatch_now=ctx.now_ms;
+            ctx.now_ms=touch_sample_ms;
             if (ui_gesture_feed(&gesture, &ctx, &event)) {
                 app_redraw_t redraw =
                     dispatch_page_gesture(&ctx,current,&event);
                 present_page(&ctx, current, &gesture, redraw);
                 if (redraw != APP_REDRAW_NONE) ctx.consumed = true;
             }
+            ctx.now_ms=dispatch_now;
         }
 
         ctx.now_ms = esp_timer_get_time() / 1000;
+        if(display_reader_settle_pending()) {
+            reader_capture_begin(ctx.tp,ctx.touch);
+            display_reader_settle_poll(ctx.now_ms,ctx.consumed || touch.touched || reader_capture_pending());
+            reader_capture_end();
+        }
         rails_idle_check(ctx.now_ms);
 
         // 电源键短按默认锁屏；阅读正文可选择将它用于下一页。
@@ -1355,7 +1382,7 @@ void app_loop_run(const app_loop_config_t* config) {
         const bool page_exposed = !power_dialog_open && !s_quick.open && !quick_input_owned &&
             !menu_open && !ctx.request_app && !ctx.request_menu && !ctx.request_return;
         if (current == &app_book) app_book_ticket_sample(ctx.now_ms, page_exposed);
-        if (page_exposed && !ui_click_feedback_active() && current->on_tick != NULL) {
+        if (page_exposed && !reader_capture_pending() && !ui_click_feedback_active() && current->on_tick != NULL) {
             app_redraw_t redraw = current->on_tick(&ctx);
             if (redraw == APP_REDRAW_PAGE || redraw == APP_REDRAW_FULL) held_key = -1;
             present_page(&ctx, current, &gesture, redraw);

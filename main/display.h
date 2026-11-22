@@ -147,3 +147,8 @@ unsigned display_main_quality_set(unsigned white_phases);
 #ifdef __cplusplus
 }
 #endif
+
+/// Ordinary text turns defer only the extra endpoint compensation; other output flushes it.
+enum EpdDrawError update_display_reader_continue(EpdiyHighlevelState *hl);
+bool display_reader_settle_pending(void);
+void display_reader_settle_poll(int64_t now_ms, bool input_pending);

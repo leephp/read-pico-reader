@@ -821,3 +821,5 @@ int main(void) {
 // Continuous state is exercised separately with native-size buffers.
 void continuous_du_reset(void){}
 bool continuous_du_busy(void){return false;}
+
+const EpdWaveform* display_reader_settle_waveform(void){return &reader_soft;}

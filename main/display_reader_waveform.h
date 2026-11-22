@@ -23,3 +23,8 @@ const EpdWaveform* display_reader_cleanup_waveform(void);
 const EpdWaveform* display_reader_white_push_waveform(void);
 /// 只归一文字区域目标，保留真实back和区域外灰阶。/ Normalize only the text target, retaining real history and outside grays.
 bool display_reader_fast_text_prepare(EpdiyHighlevelState* hl,EpdRect area);
+
+/// Local staged reader: unchanged calibrated prefix and separate white12/black4 tail.
+/// NULL means the calibrated source is unavailable; use the legacy complete waveform.
+const EpdWaveform* display_reader_continue_waveform(void);
+const EpdWaveform* display_reader_settle_waveform(void);

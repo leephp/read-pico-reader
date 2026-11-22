@@ -23,3 +23,9 @@ cc -std=c11 -D_DEFAULT_SOURCE -Wall -Wextra -Werror -Wno-unused-but-set-variable
 python3 tools/lock_feedback_host_test.py
 
 python3 tools/power_dialog_host_test.py
+
+cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -g \
+  -Itools/app_loop_stubs -Imain/app tools/reader_capture_host_test.c -o "$out/capture"
+"$out/capture"
+
+python3 tools/reader_capture_lifecycle_host_test.py

@@ -321,7 +321,7 @@ static enum EpdDrawError hl_update_area(
                 x_last -= 1;
             }
 
-            memcpy(lbb + (x / 2), lfb + (x / 2), (x_last - x + 1) / 2);
+            if (lbb != lfb) memcpy(lbb + (x / 2), lfb + (x / 2), (x_last - x + 1) / 2);
         }
     }
 

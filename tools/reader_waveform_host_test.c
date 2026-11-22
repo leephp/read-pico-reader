@@ -63,6 +63,17 @@ static void test_fast_target(void) {
 int main(void) {
     e0470_waveform_init();
     test_fast_target();
+    const EpdWaveformPhases *legacy=e0470_waveform_phases(display_reader_soft_turn_waveform(),MODE_GL16);
+    const EpdWaveformPhases *rapid=e0470_waveform_phases(display_reader_continue_waveform(),MODE_GL16);
+    const EpdWaveformPhases *tail=e0470_waveform_phases(display_reader_settle_waveform(),MODE_GL16);
+    assert(legacy->phases==E0470_GL16_FRAMES+16 && rapid->phases==E0470_GL16_FRAMES && tail->phases==16);
+    for(int to=0;to<16;++to)for(int from=0;from<16;++from) {
+        for(int f=0;f<E0470_GL16_FRAMES;++f)assert(e0470_phase_action(rapid,f,to,from)==e0470_phase_action(legacy,f,to,from));
+        for(int f=0;f<16;++f)assert(e0470_phase_action(tail,f,to,from)==e0470_phase_action(legacy,f+E0470_GL16_FRAMES,to,from));
+        for(int f=0;f<16;++f)assert(e0470_phase_action(tail,f,to,from)==(f<12?(to==15?2:0):(to==0?1:0)));
+    }
+    puts("PASS: all256 transitions retain the exact calibrated prefix and white12/black4 tail; middle grays untouched");
+
     const EpdWaveformPhases* base_gc = e0470_waveform_phases(&E0470_FULL_WAVEFORM, MODE_GC16);
     uint8_t saved_gc[48*16*4]; assert(base_gc && base_gc->phases==48);
     memcpy(saved_gc,base_gc->luts,sizeof(saved_gc));

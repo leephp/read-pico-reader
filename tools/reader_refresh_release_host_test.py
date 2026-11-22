@@ -115,6 +115,12 @@ static enum EpdDrawError update_display_text_turn(void *hl,EpdRect area,int dir)
 static enum EpdDrawError update_display_reader_area(void *hl,const EpdWaveform *wave,int mode,EpdRect area,bool full){
  (void)hl;return push_area(full?14:13,wave,mode,area);
 }
+static int64_t s_reader_footer_due_ms;
+static bool rapid_pending;
+static bool display_reader_settle_pending(void){return rapid_pending;}
+static enum EpdDrawError update_display_reader_continue(void *hl){
+ (void)hl;rapid_pending=!fail;return push_area(21,&soft_turn_waveform,MODE_GL16,(EpdRect){0,0,684,1216});
+}
 static bool present_reader_footer(app_ctx_t *ctx){
  (void)ctx;assert(calls==1||calls==3);++footer_commits;s_reader_footer_pending=false;return true;
 }
@@ -154,7 +160,7 @@ static void flush_ticket_stats(void){++lock_flushes;}
 unit+=function('before_lock',root/'main/apps/app_book.c')
 
 unit+=r'''
-static void reset(void){
+static void reset(void){rapid_pending=false;
  calls=selected=rendered=prepares=fail=images=tick=0;background=immersive=false;s_view=s_presented_view=READING;
  s_reader_panel=READER_PANEL_NONE;s_mode=MODE_GL16;s_reader_fullscreen=true;
  footer_commits=0;s_reader_footer_pending=false;s_reader_cleanup=false;s_water_turn_pending=false;s_reader_turn_pending=true;
@@ -195,9 +201,9 @@ int main(void){
   reset();s_reader_fullscreen=full;immersive=hide_status;s_reader_footer_pending=false;s_area=reader_area();
   images=content==1;s_reader_image_refresh_pending=images!=0;background=content==2;
   assert(present(&ctx,APP_REDRAW_AREA));
-  assert(calls==1&&selected==14&&modes[0]==MODE_GL16&&waves[0]==&soft_turn_waveform&&s_reader_text_frame==(content==0));
+  assert(calls==1&&selected==(content==0?21:14)&&modes[0]==MODE_GL16&&waves[0]==&soft_turn_waveform&&s_reader_text_frame==(content==0));
   same_area(areas[0],content==1?reader_area():(EpdRect){0,0,684,1216});
-  assert(footer_commits==1&&!s_reader_footer_pending&&!s_reader_cleanup);
+  assert(footer_commits==(content==0?0:1)&&s_reader_footer_pending==(content==0)&&!s_reader_cleanup);
  }
  for(int full=0;full<2;++full)for(int image=0;image<2;++image){
   reset();s_reader_fullscreen=full;s_reader_cleanup=true;s_area=reader_area();
@@ -231,7 +237,7 @@ int main(void){
  present(&ctx,APP_REDRAW_FULL);assert(calls==1&&selected==12);
  reset();s_reader_turn_pending=false;present(&ctx,APP_REDRAW_PAGE);assert(calls==1&&selected==13&&rendered==1);
  reset();fail=1;s_reader_footer_pending=false;
- present(&ctx,APP_REDRAW_AREA);assert(calls==1&&selected==14&&!s_reader_text_frame&&!s_reader_footer_pending);
+ present(&ctx,APP_REDRAW_AREA);assert(calls==1&&selected==21&&!s_reader_text_frame&&!s_reader_footer_pending);
  // 非翻页局部、背景和图片同样只推真实差分；未变化像素不驱动，DU 继续用跟随表。
  // Other local, background and image updates also present true differences only;
  // unchanged pixels are not driven and DU keeps the follow table.
