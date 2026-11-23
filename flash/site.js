@@ -98,12 +98,12 @@
     });
   }
   document.addEventListener("kiikoread:release", async event => {
-    const {manifest, latest, device, feed: feedPath} = event.detail;
+    const {manifest, displayName, latest, device, feed: feedPath} = event.detail;
     const releaseEvent = event;
     window.__kiikoreadReleaseEvent = releaseEvent;
     const list = document.getElementById("release-notes-list");
-    document.getElementById("release-notes-title").textContent = `${device === "metalio" ? "Metalio · " : "Pico · "}${manifest.version.split("-").pop()} · 更新日志`;
-    let notes = archiveNotes[manifest.version] || ["历史版本说明请查看 GitHub Releases。"];
+    document.getElementById("release-notes-title").textContent = `${device === "metalio" ? "Metalio · " : "Pico · "}${displayName} · 更新日志`;
+    let notes = archiveNotes[manifest.version] || (Array.isArray(manifest.release_notes) && manifest.release_notes) || ["历史版本说明请查看 GitHub Releases。"];
     if (latest) {
       list.replaceChildren(Object.assign(document.createElement("li"), {textContent:"正在读取最新更新说明…"}));
       try {

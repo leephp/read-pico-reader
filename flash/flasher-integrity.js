@@ -10,7 +10,8 @@
   const digest=async bytes=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(v=>v.toString(16).padStart(2,'0')).join('');
   function validate(manifest,device='pico'){
     const model=profiles[device];
-    if(!model||!/^\d+\.\d+\.\d+(?:-rc\d+)?$/.test(manifest.version)||manifest.new_install_prompt_erase!==true||manifest.builds?.length!==1||manifest.builds[0].chipFamily!==model.family||manifest.builds[0].parts?.length!==4)throw Error('刷机清单与所选设备不符，已停止安装。');
+    const customPico=device==='pico'&&/^\d+\.\d+\.\d+-rc\d+-qdsx-v\d+\.\d+\.\d+$/.test(manifest.version);
+    if(!model||(!customPico&&!/^\d+\.\d+\.\d+(?:-rc\d+)?$/.test(manifest.version))||manifest.new_install_prompt_erase!==true||manifest.builds?.length!==1||manifest.builds[0].chipFamily!==model.family||manifest.builds[0].parts?.length!==4)throw Error('刷机清单与所选设备不符，已停止安装。');
     const seen=new Set();
     for(const part of manifest.builds[0].parts){const index=model.offsets.indexOf(part.offset);if(index<0||seen.has(index))throw Error('刷机地址不属于所选设备。');seen.add(index);}
     if(device==='metalio'&&(manifest.board!=='metalio47'||manifest.project!==model.project||manifest.pico_ota?.layout!=='metalio-s31-dual-5m-v1'))throw Error('Metalio 分区或项目身份不匹配。');

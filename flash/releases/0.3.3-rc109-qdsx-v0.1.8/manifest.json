@@ -1,0 +1,43 @@
+{
+  "name": "kiikoread 墨水屏",
+  "version": "0.3.3-rc109-qdsx-v0.1.8",
+  "board": "pico",
+  "experimental_main_clean": false,
+  "project": "Read_Pico",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        {
+          "path": "bootloader.bin",
+          "offset": 0,
+          "size": 21232,
+          "sha256": "2a6fad958a60376fdbaf2aeb5b84ed4ee21147febb3176a084aabfe0fec0823a"
+        },
+        {
+          "path": "partitions.bin",
+          "offset": 32768,
+          "size": 3072,
+          "sha256": "edba9d92e5fc51c706c12f4b4a5d5d23728ba8fb0fbc00be654f1eccef404bda"
+        },
+        {
+          "path": "../../Pico-update-0.3.3-rc109-qdsx-v0.1.8.bin",
+          "offset": 65536,
+          "size": 4042912,
+          "sha256": "6c5640d727103254c722514a5f7b01cb448b25ef1f2c76eb5828eeca6e3ea972"
+        },
+        {
+          "path": "ota_data_initial.bin",
+          "offset": 13697024,
+          "size": 8192,
+          "sha256": "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f"
+        }
+      ]
+    }
+  ],
+  "updated_at": "2026-11-22T22:29:17+08:00",
+  "release_notes": [
+    "连续翻页时采样按键输入，停手后统一补偿刷新。"
+  ]
+}

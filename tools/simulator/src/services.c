@@ -128,6 +128,10 @@ void ble_pt_reconnect_recent(void){}
 /* 波形派生表在宿主没有物理面板；返回保守的常量表。 */
 /* Derived panel tables have no physical panel on the host; return the conservative table. */
 const EpdWaveform *display_main_fast_white_waveform(const EpdWaveform*source,enum EpdDrawMode mode){(void)mode;return source?source:&E0470_WAVEFORM;}
+/* The simulator displays the completed framebuffer immediately. */
+const EpdWaveform *display_reader_cleanup_waveform(void){return &E0470_WAVEFORM;}
+enum EpdDrawError update_display_reader_continue(EpdiyHighlevelState *hl){(void)hl;return EPD_DRAW_SUCCESS;}
+bool display_reader_settle_pending(void){return false;}
 const EpdWaveform *display_reader_soft_turn_waveform(void){return &E0470_WAVEFORM;}
 const EpdWaveform *display_reader_white_push_waveform(void){return &E0470_WAVEFORM;}
 const EpdWaveform *display_settings_motion_waveform(void){return &E0470_WAVEFORM;}
