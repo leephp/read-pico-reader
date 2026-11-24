@@ -105,6 +105,13 @@ EpdRect ui_nav_status_area(void){return (EpdRect){0,12,684,56};}
 bool ui_nav_refresh_power(uint8_t *fb){(void)fb;if(power_change_step<0||step<power_change_step||power_reported)return false;power_reported=true;++power_header_draws;return true;}
 
 static bool media_test, sd_font, saved_sd_font;
+static const char *deferred_path;
+static int resumed_book;
+bool app_book_request_resume(const char *path,bool fullscreen) {
+    assert(fullscreen && deferred_path && !strcmp(path,deferred_path));
+    ++resumed_book;
+    return true;
+}
 static bool auto_recovery_test, test_usb_active;
 bool test_usb_storage_active(void){return test_usb_active;}
 static int recovery_calls, health_polls, recovery_step, covers_busy_until, avatar_busy_until;
@@ -230,7 +237,7 @@ bool ttf_font_is_builtin(void) {return !sd_font;}
 const char* ttf_font_path(void) {return "other";}
 int ttf_font_open(const char*p) {(void)p;font_opens++;sd_font=true;return 0;}
 int ttf_font_open_builtin(void) {assert(media_lost>0);builtin_opens++;sd_font=font_due=false;return 0;}
-int read_pico_sd_get_info(read_pico_sd_info_t*i) {i->present=media_test?present_steps[step]:font_due;i->mounted=media_test?mounted_steps[step]:font_due;return media_test&&!i->mounted?ESP_ERR_INVALID_STATE:0;}
+int read_pico_sd_get_info(read_pico_sd_info_t*i) {if(deferred_path){i->present=true;i->mounted=step>=2;return i->mounted?0:ESP_ERR_NOT_FINISHED;}i->present=media_test?present_steps[step]:font_due;i->mounted=media_test?mounted_steps[step]:font_due;return media_test&&!i->mounted?ESP_ERR_INVALID_STATE:0;}
 int read_pico_sd_start_probe(void) {probes++;return auto_recovery_test?ESP_ERR_INVALID_STATE:ESP_ERR_NOT_FINISHED;}
 void read_pico_sd_poll_health(void) {++health_polls;}
 bool read_pico_sd_needs_recovery(void) {return auto_recovery_test&&!mounted_steps[step];}
@@ -293,6 +300,7 @@ static void reset(void) {
     nav_arms=nav_draws=nav_full_arms=nav_area_draws=0;nav_armed=NULL;
     main_source_visible=main_target_visible=true;
     auto_recovery_test=test_usb_active=false;recovery_calls=health_polls=0;recovery_step=-1;covers_busy_until=avatar_busy_until=-1;
+    deferred_path=NULL;resumed_book=0;
     media_test=sd_font=saved_sd_font=false;media_lost=media_ready=builtin_opens=font_opens=probes=0;loss_step=-1;
     memset(mounted_steps,0,sizeof(mounted_steps));memset(present_steps,0,sizeof(present_steps));
     long_keys=0;
@@ -306,7 +314,7 @@ static void reset(void) {
     second=(app_desc_t){.title="second",.render=render,.on_enter=enter};
 }
 static void add(int x,int y,int count,int error) {samples[sample_count++]=(sample_t){x,y,count,error};}
-static void run(void) {app_loop_config_t cfg={.fb=frame,.first_app=start_second?&second:&first};if(!setjmp(done))app_loop_run(&cfg);}
+static void run(void) {app_loop_config_t cfg={.fb=frame,.first_app=start_second?&second:&first,.deferred_book=deferred_path,.deferred_fullscreen=true};if(!setjmp(done))app_loop_run(&cfg);}
 static app_redraw_t consumed_return_tick(app_ctx_t*c) { if(step==0){c->leaf=7;c->request_app=&second;}else c->request_return=true;return APP_REDRAW_NONE; }
 static app_redraw_t return_tick(app_ctx_t*c) { c->request_return=true; return APP_REDRAW_NONE; }
 static app_redraw_t origin_tick(app_ctx_t*c) { c->leaf=7; if(step==0 && request_on_tick)c->request_app=&second; return APP_REDRAW_NONE; }
@@ -340,6 +348,14 @@ void app_book_shelf_prefetch_reset(void) {}
 void app_book_shelf_prefetch_first(app_ctx_t *ctx) { (void)ctx; }
 
 int main(void) {
+    reset(); deferred_path=__FILE__;
+    add(650,1150,1,0);add(0,0,0,0);add(0,0,0,0);run();
+    assert(menus==1 && !resumed_book);
+    reset();deferred_path=__FILE__;
+    for(int i=0;i<4;++i)add(0,0,0,0);
+    run();assert(resumed_book==1);
+    puts("PASS: first menu while card is probing cancels deferred resume; idle mount resumes once");
+
     for(int white=0;white<2;++white)for(int binary=0;binary<2;++binary){
         reset();child_view=false;first.enter_full=true;first.persistent_navigation=true;
         first.white_child_transition=white;first.binary_ui=binary;first.main_page_visible=child_root;first.on_tick=child_cycle;
@@ -424,9 +440,8 @@ int main(void) {
     reset();first.on_gesture=gesture;full_tick=true;add(100,400,1,0);add(0,0,0,0);run();
     assert(events[UI_GESTURE_CANCEL]==1&&!events[UI_GESTURE_TAP]);
     reset();first.on_gesture=gesture;font_due=true;time_offset=4000000;add(100,400,1,0);add(0,0,0,0);run();
-    // 开机首帧前已加载保存字体，因此首个手势无需再被延迟字体切换取消。
-    // The saved font is ready before the first frame, so the first gesture is no longer cancelled.
-    assert(events[UI_GESTURE_PRESS]==1&&events[UI_GESTURE_TAP]==1&&font_opens==1);
+    // An SD font retry must not delay or cancel the first gesture.
+    assert(events[UI_GESTURE_PRESS]==1&&events[UI_GESTURE_TAP]==1&&font_opens==0);
     reset();first.owns_keys=true;add(650,1150,1,0);add(0,0,0,0);add(240,1500,1,0);add(0,0,0,0);add(400,1500,1,0);run();
     assert(!keys[1]&&!keys[2]&&fulls==2&&menus==2);
     reset();add(650,1150,1,0);add(0,0,0,0);

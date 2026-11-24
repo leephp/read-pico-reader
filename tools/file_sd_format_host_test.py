@@ -9,7 +9,7 @@ ROOT=Path(__file__).resolve().parents[1]
 source=ROOT/'main/apps/app_files.c'
 s=source.read_text()
 a=s.index('    if (!long_press && sd_needs_format() && ui_rect_hit(storage_card_rect()')
-b=s.index('    for (int i = 0; !long_press && i < 3;',a)
+b=s.index('    for (int i = 0; !long_press && i < 4;',a)
 unit=r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -22,8 +22,8 @@ typedef int esp_err_t;
 #define ESP_OK 0
 #define ESP_ERR_NOT_FINISHED 3
 static bool avatar_ok=true;
-static bool book_cover_jobs_quiesce(unsigned ms){assert(ms==2000);return true;}
-static bool ui_avatar_quiesce(unsigned ms){assert(ms==2000);return avatar_ok;}
+static bool book_cover_jobs_quiesce(unsigned ms){assert(ms==0);return true;}
+static bool ui_avatar_quiesce(unsigned ms){assert(ms==0);return avatar_ok;}
 #define APP_REDRAW_NONE 0
 #define APP_REDRAW_PAGE 1
 static read_pico_sd_info_t s_sd;

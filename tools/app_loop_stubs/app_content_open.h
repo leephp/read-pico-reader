@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 static inline bool app_book_request_open(const char *path) { (void)path; return true; }
+bool app_book_request_resume(const char *path,bool fullscreen);
 static inline bool app_image_request_open(const char *path) { (void)path; return true; }
 static inline void app_files_request_folder(int folder) { (void)folder; }
 static inline void app_book_request_manage(void) {}

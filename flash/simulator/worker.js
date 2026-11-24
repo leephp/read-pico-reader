@@ -1,6 +1,7 @@
 // 中文：压缩资源并行加载；不变画面不传像素。/ Load compressed resources in parallel and omit unchanged pixels.
 let core,ready=false,saved,demonstration=false,persistent=false,lastPixels;
-const version='0.3.3-rc97',started=performance.now();
+let version;
+const started=performance.now();
 function progress(text){postMessage({type:'progress',text,elapsed:Math.round(performance.now()-started)});}
 async function download(file,label,expectedSize){
  const controller=new AbortController();let timeout=setTimeout(()=>controller.abort(),25000);
@@ -21,8 +22,16 @@ function frame(id){
 function save(){if(!persistent)return;clearTimeout(saved);saved=setTimeout(()=>core.FS.syncfs(false,error=>{if(error)postMessage({type:'notice',text:'浏览器未允许保存，下次打开将重新体验。'});}),400);}
 async function initialize(options={}){
  demonstration=!!options.demo;progress('正在下载固件与阅读资源…');
- const runtime=await fetch(new URL('./runtime.json?v=mobile-20261021',import.meta.url),{cache:'no-cache'}).then(r=>{if(!r.ok)throw new Error('资源清单未能加载');return r.json();});
- const [factory,wasm,data]=await Promise.all([import(new URL(runtime.module,import.meta.url).href),download(runtime.wasm,'固件程序',runtime.wasmSize),download(runtime.data,'字体与示例书',runtime.dataSize)]);
+ const runtime=await fetch(new URL('./runtime.json?v=qdsx-v018',import.meta.url),{cache:'no-cache'}).then(r=>{if(!r.ok)throw new Error('资源清单未能加载');return r.json();});
+ version=runtime.version;
+ const [factory,wasm,downloaded]=await Promise.all([import(new URL(runtime.module,import.meta.url).href),download(runtime.wasm,'固件程序',runtime.wasmSize),download(runtime.data,'字体与示例书',runtime.dataSize)]);
+ let data=downloaded;
+ const signature=new Uint8Array(downloaded,0,2);
+ if(signature[0]===0x1f&&signature[1]===0x8b){
+  const stream=new Blob([downloaded]).stream().pipeThrough(new DecompressionStream('gzip'));
+  data=await new Response(stream).arrayBuffer();
+ }
+ if(data.byteLength!==runtime.dataSize)throw new Error('字体与示例书资源不完整，请重试。');
  progress('资源已就绪，正在启动阅读引擎…');
  core=await factory.default({wasmBinary:wasm,getPreloadedPackage:()=>data,locateFile:name=>new URL(name==='pico.wasm'?runtime.wasm:name==='pico.data'?runtime.data:name,import.meta.url).href,print:()=>{},printErr:message=>console.warn(message)});
  core.FS.mkdirTree('/Data/nvs');core.FS.mkdirTree('/Data/flash');core.FS.mkdirTree('/Data/card/fonts');core.FS.mkdirTree('/Data/card/pictures');

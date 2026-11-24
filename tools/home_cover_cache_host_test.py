@@ -22,6 +22,7 @@ if __name__ == '__main__':
     home = ROOT / 'main/apps/app_dashboard.c'
     source = home.read_text()
     types = source[source.index('typedef struct {'):source.index('static int s_cover_next;')]
+    types=types[:types.index('// Only the worker')]+types[types.index('typedef struct {',types.index('// Only the worker')):]
     unit = r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -96,7 +97,7 @@ ready:
     for name in ('book_at','clear_cover_cache','app_home_cover_mode_changed','restore_cover_cache','load_cover'):
         unit += function(name, home)+'\n'
     unit += r'''
-static void book(int slot,int id){home_book_t *b=book_at(slot);memset(b,0,sizeof(*b));if(id<0)return;snprintf(b->path,sizeof(b->path),"/book%d.epub",id);snprintf(b->title,sizeof(b->title),"title%d",id);strcpy(b->author,"author");}
+static void book(int slot,int id){home_book_t *b=book_at(slot);memset(b,0,sizeof(*b));if(id<0)return;snprintf(b->path,sizeof(b->path),"/book%d.epub",id);snprintf(b->title,sizeof(b->title),"title%d",id);strcpy(b->author,"author");b->size=100+id;b->modified=200+id;}
 static void seed(void){clear_cover_cache();for(int i=0;i<7;++i){book(i,i);assert(load_cover(book_at(i),i));}assert(live_bytes==7u*176*240);}
 int main(void){
     unsigned rng=1;
@@ -110,7 +111,7 @@ int main(void){
     seed();book(0,5);book(1,5);book(2,-1);book(3,2);book(4,0);book(5,-1);book(6,8);restore_cover_cache();
     assert(book_at(0)->cover&&!book_at(1)->cover&&!book_at(2)->cover&&book_at(3)->cover&&book_at(4)->cover&&!book_at(5)->cover&&!book_at(6)->cover);
     assert(live_bytes==3u*176*240);
-    seed();missing=2;modified=3;strcpy(book_at(4)->author,"changed");restore_cover_cache();assert(!book_at(2)->cover&&!book_at(3)->cover&&!book_at(4)->cover&&live_bytes==4u*176*240);
+    seed();missing=2;modified=3;book_at(2)->path[0]=0;book_at(3)->modified++;strcpy(book_at(4)->author,"changed");restore_cover_cache();assert(!book_at(2)->cover&&!book_at(3)->cover&&!book_at(4)->cover&&live_bytes==4u*176*240);
     missing=modified=-1;app_home_cover_mode_changed();assert(!live_bytes);
     fast=true;book(0,0);assert(load_cover(book_at(0),0));assert(live_bytes==5280&&book_at(0)->cover_fast);
     book_crop_t crop=book_cover_crop(176,240,176,240);
@@ -129,7 +130,7 @@ int main(void){
     asset_allowed=true;book(0,0);strcpy(book_at(0)->path,"/book0.TXT");
     assert(load_cover(book_at(0),0)&&!job_requests[0].artwork_only&&book_at(0)->cover);
     clear_cover_cache();book(0,0);
-    assert(load_cover(book_at(0),0)&&job_requests[0].artwork_only);
+    assert(load_cover(book_at(0),0)&&job_requests[0].natural&&book_at(0)->cover);
     clear_cover_cache();
     puts("PASS: 300 actual in-place Home reorderings; duplicate/missing/modified identities; no stale pointer or double free; fast 5,280-byte BW only; gray-only ordinary/ripple; checked OOM and recovery");
 }

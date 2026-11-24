@@ -113,7 +113,7 @@ static void restore_local(void) {
 
 esp_err_t usb_storage_start(void) {
     book_lock_collage_invalidate();
-    if (!(book_cover_jobs_quiesce(2000) && ui_avatar_quiesce(2000))) return ESP_ERR_NOT_FINISHED;
+    if (!(book_cover_jobs_quiesce(0) && ui_avatar_quiesce(0))) return ESP_ERR_NOT_FINISHED;
     if (s_cleanup_pending) return ESP_ERR_INVALID_STATE;
     if (s_active) return ESP_OK;
     read_pico_sd_info_t info = {0};

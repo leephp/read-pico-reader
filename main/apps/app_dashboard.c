@@ -1,3 +1,8 @@
+#include <stdatomic.h>
+#ifdef ESP_PLATFORM
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#endif
 #ifdef ESP_PLATFORM
 #include "ui_locale_format.h"
 #endif
@@ -81,6 +86,7 @@ typedef struct {
     uint8_t *cover;
     bool cover_fast;
     uint16_t cover_width,cover_height;
+    off_t size;
     time_t modified;
     book_progress_t progress;
     bool has_progress;
@@ -89,6 +95,15 @@ typedef struct {
 // 首页冷数据不参与DMA或中断，在PSRAM保留原静态生命周期和零初始化。
 // Home cold data is never used by DMA/ISRs; keep its static lifetime and zero initialization in PSRAM.
 static EXT_RAM_BSS_ATTR home_book_t s_current, s_recent[6];
+// Only the worker writes this snapshot. The UI copies it after the worker closes its files.
+static EXT_RAM_BSS_ATTR home_book_t pending_books[7];
+static char pending_books_dir[BOOK_STORE_PATH_MAX];
+static bool pending_card, pending_read_ok;
+static uint32_t pending_store_revision,pending_progress_revision;
+static bool home_scan_started;
+
+static atomic_bool home_scan_running, home_scan_cancel;
+
 typedef struct {
     char path[BOOK_STORE_PATH_MAX];
     char title[128];
@@ -142,7 +157,7 @@ static bool s_save_error,s_folder_attempted;
 static uint8_t *s_folder;
 static bool s_folder_fast;
 static uint32_t s_folder_key;
-static char s_excerpt[BOOK_EXCERPT_CAP];
+static char s_excerpt[BOOK_EXCERPT_CAP], pending_excerpt[BOOK_EXCERPT_CAP];
 static EXT_RAM_BSS_ATTR uint8_t s_avatar[60*60];
 static bool s_avatar_ready,s_avatar_pending;
 static char s_avatar_path[288];
@@ -204,32 +219,34 @@ static void title_for(home_book_t *item) {
 }
 
 static void consider_book(const char *path, const struct stat *st) {
-    if (s_current.path[0] && !strcmp(path, s_current.path)) return;
+    home_book_t *recent = pending_books + 1;
+    if (pending_books[0].path[0] && !strcmp(path, pending_books[0].path)) return;
     book_progress_t progress = {0};
     bool has_progress = st->st_size >= 0 && (uint64_t)st->st_size <= UINT32_MAX &&
                         book_progress_load(path, (uint32_t)st->st_size, &progress);
-    for (int i=0;i<6;++i) if (!strcmp(path,s_recent[i].path)) return;
+    for (int i=0;i<6;++i) if (!strcmp(path,recent[i].path)) return;
     uint64_t score = has_progress ? (UINT64_C(1) << 32) + progress.last_open_s : (uint64_t)st->st_mtime;
     int slot = -1;
     for (int i = 0; i < 6; ++i) {
-        uint64_t other = s_recent[i].has_progress ?
-            (UINT64_C(1) << 32) + s_recent[i].progress.last_open_s : (uint64_t)s_recent[i].modified;
-        if (!s_recent[i].path[0] || score > other) { slot = i; break; }
+        uint64_t other = recent[i].has_progress ?
+            (UINT64_C(1) << 32) + recent[i].progress.last_open_s : (uint64_t)recent[i].modified;
+        if (!recent[i].path[0] || score > other) { slot = i; break; }
     }
     if (slot < 0) return;
-    for (int i = 5; i > slot; --i) s_recent[i] = s_recent[i - 1];
-    memset(&s_recent[slot], 0, sizeof(s_recent[slot]));
-    snprintf(s_recent[slot].path, sizeof(s_recent[slot].path), "%s", path);
-    s_recent[slot].modified = st->st_mtime;
-    s_recent[slot].has_progress = has_progress;
-    if (has_progress) s_recent[slot].progress = progress;
+    for (int i = 5; i > slot; --i) recent[i] = recent[i - 1];
+    memset(&recent[slot], 0, sizeof(recent[slot]));
+    snprintf(recent[slot].path, sizeof(recent[slot].path), "%s", path);
+    recent[slot].modified = st->st_mtime;
+    recent[slot].size = st->st_size;
+    recent[slot].has_progress = has_progress;
+    if (has_progress) recent[slot].progress = progress;
 }
 
 static void scan_root(const char *root) {
     DIR *dir = opendir(root);
     if (!dir) return;
     struct dirent *entry;
-    while ((entry = readdir(dir))) {
+    while (!atomic_load(&home_scan_cancel) && (entry = readdir(dir))) {
         if (!is_book(entry->d_name)) continue;
         char path[BOOK_STORE_PATH_MAX];
         if (snprintf(path, sizeof(path), "%s/%s", root, entry->d_name) >= sizeof(path)) continue;
@@ -241,8 +258,9 @@ static void scan_root(const char *root) {
 
 static bool recent_visit(const char *path,const book_progress_t *progress,void *ctx) {
     (void)ctx;
+    if (atomic_load(&home_scan_cancel)) return false;
     struct stat st;
-    if (is_book(path) && !stat(path,&st) && S_ISREG(st.st_mode) && st.st_size>=0 && (uint64_t)st.st_size==progress->file_size)
+    if ((pending_card || strncmp(path,"/sdcard/",8)) && is_book(path) && !stat(path,&st) && S_ISREG(st.st_mode) && st.st_size>=0 && (uint64_t)st.st_size==progress->file_size)
         consider_book(path,&st);
     return true;
 }
@@ -250,24 +268,26 @@ static void scan_books(void) {
     char last[BOOK_STORE_PATH_MAX];
     // 不支持的恢复记录只跳过，不删除其他固件的缓存和阅读位置。
     // Ignore unsupported resume records without deleting another firmware's cache or progress.
-    if (book_progress_last_path(last, sizeof(last)) && book_file_path_supported(last)) {
+    if (book_progress_last_path(last, sizeof(last)) && book_file_path_supported(last) &&
+        (pending_card || strncmp(last,"/sdcard/",8))) {
         struct stat st;
         if (!stat(last, &st) && S_ISREG(st.st_mode) && st.st_size >= 0 && (uint64_t)st.st_size <= UINT32_MAX) {
-            snprintf(s_current.path, sizeof(s_current.path), "%s", last);
-            s_current.has_progress = book_progress_load(last, (uint32_t)st.st_size, &s_current.progress);
-            title_for(&s_current);
+            snprintf(pending_books[0].path, sizeof(pending_books[0].path), "%s", last);
+            pending_books[0].size=st.st_size;
+            pending_books[0].modified=st.st_mtime;
+            pending_books[0].has_progress = book_progress_load(last, (uint32_t)st.st_size, &pending_books[0].progress);
+            title_for(&pending_books[0]);
         }
     }
     (void)book_progress_list(recent_visit,NULL);
-    read_pico_sd_info_t sd = {0};
-    read_pico_sd_get_info(&sd);
-    if (sd.mounted) {
-        if (!strcmp(app_settings_books_dir(), "/sdcard/books")) scan_root("/sdcard/book");
-        scan_root(app_settings_books_dir());
+    if (pending_card) {
+        if (!strcmp(pending_books_dir, "/sdcard/books")) scan_root("/sdcard/book");
+        scan_root(pending_books_dir);
     }
     if (book_store_flash_ready()) scan_root("/flash/books");
     for (int i=0;i<7;++i) {
-        home_book_t *b=book_at(i);
+        if (atomic_load(&home_scan_cancel)) return;
+        home_book_t *b=&pending_books[i];
         if (!b->path[0]) continue;
         title_for(b);
         char metadata_title[128],metadata_author[128];
@@ -278,7 +298,7 @@ static void scan_books(void) {
                 copy_title(b->author,sizeof(b->author),metadata_author);
         }
     }
-    home_book_t *featured = s_current.path[0] ? &s_current : &s_recent[0];
+    home_book_t *featured = pending_books[0].path[0] ? &pending_books[0] : &pending_books[1];
     const char *ext = strrchr(featured->path, '.');
     if (ext && !strcasecmp(ext, ".epub") && pico_boot_asset_allowed(featured->path)) {
         char metadata_title[256],metadata_author[128];
@@ -290,16 +310,32 @@ static void scan_books(void) {
                 copy_title(featured->author,sizeof(featured->author),metadata_author);
         }
     }
+    pending_excerpt[0]=0;
+    if (!atomic_load(&home_scan_cancel) && featured->has_progress)
+        book_excerpt_load(featured->path,featured->progress.chapter,pending_excerpt);
 }
 
-static void refresh_progress(void) {
-    for (int i = 0; i < 7; ++i) {
-        home_book_t *item = book_at(i);
-        struct stat st;
-        if (!item->path[0] || stat(item->path, &st) || !S_ISREG(st.st_mode) ||
-            st.st_size < 0 || (uint64_t)st.st_size > UINT32_MAX) continue;
-        item->has_progress = book_progress_load(item->path, (uint32_t)st.st_size, &item->progress);
+static void cancel_home_scan(void) {
+    atomic_store(&home_scan_cancel, true);
+    home_scan_started = false;
+}
+
+static void home_scan_task(void *arg) {
+    (void)arg;
+#ifdef ESP_PLATFORM
+    bool lease = pending_card && read_pico_sd_begin_listing();
+    pending_read_ok = !pending_card || lease;
+    if (pending_read_ok) {
+#endif
+        if (!atomic_load(&home_scan_cancel)) scan_books();
+#ifdef ESP_PLATFORM
     }
+    if (lease) read_pico_sd_end_listing();
+#endif
+    atomic_store(&home_scan_running, false);
+#ifdef ESP_PLATFORM
+    vTaskDelete(NULL);
+#endif
 }
 
 static void remember_scan_state(const read_pico_sd_info_t *sd) {
@@ -332,15 +368,14 @@ static void restore_cover_cache(void) {
     int match[7];
     for (int i = 0; i < 7; ++i) {
         home_book_t *book = book_at(i);
-        struct stat st;
         book->cover = NULL;
         match[i] = -1;
-        if (!book->path[0] || stat(book->path, &st) || !S_ISREG(st.st_mode)) continue;
+        if (!book->path[0]) continue;
         for (int j = 0; j < 7; ++j) {
             home_cover_cache_t *cached = &s_cover_cache[j];
             if (used[j] || !cached->pixels || strcmp(book->path, cached->path) ||
                 strcmp(book->title, cached->title) || strcmp(book->author, cached->author) ||
-                st.st_size != cached->size || st.st_mtime != cached->modified) continue;
+                book->size != cached->size || book->modified != cached->modified) continue;
             match[i] = j;
             used[j] = true;
             break;
@@ -841,11 +876,6 @@ static bool present(app_ctx_t *ctx,app_redraw_t redraw) {
     }
     return true;
 }
-static void refresh_excerpt(void) {
-    const home_book_t *book=featured();
-    s_excerpt[0]=0;
-    if(book->has_progress)book_excerpt_load(book->path,book->progress.chapter,s_excerpt);
-}
 static bool home_books_empty(void) { return !s_current.path[0] && !s_recent[0].path[0]; }
 static void home_rescan_later(void) {
     if (!s_scan_retry_left) return;
@@ -884,30 +914,26 @@ static void on_enter(app_ctx_t *ctx) {
         s_cached_sd_present==sd.present&&s_cached_sd_mounted==sd.mounted&&!strcmp(s_cached_books_dir,app_settings_books_dir());
     char last[BOOK_STORE_PATH_MAX]={0};book_progress_last_path(last,sizeof(last));
     bool changed=strcmp(last,s_cached_last_path);
-    if(same&&!changed){if(s_cached_progress_revision!=progress_revision)refresh_progress();s_scan_pending=false;
-        home_rescan_done(!home_books_empty());}
-    else {
-        memset(&s_current,0,sizeof(s_current));memset(s_recent,0,sizeof(s_recent));s_scan_pending=!same;
-        if(s_scan_pending) read_pico_sd_start_probe();
-        scan_books();
-        if(same||error!=ESP_ERR_NOT_FINISHED)remember_scan_state(&sd);
-        home_rescan_done(!home_books_empty());
+    cancel_home_scan();
+    s_scan_pending = !same || changed || s_cached_progress_revision != progress_revision || home_books_empty();
+    s_scan_retry_us = 0;
+    if (!same || changed) {
+        memset(&s_current,0,sizeof(s_current));
+        memset(s_recent,0,sizeof(s_recent));
     }
-    if(!same||changed)restore_cover_cache();
     rp_boot_mark("scan");
-    s_cached_progress_revision=progress_revision;
     s_cover_next=0;
     if(app_settings_home_component()==APP_HOME_FOLDER&&(!same||changed||!s_folder_key)){uint32_t key=folder_key();
         if(key!=s_folder_key){free(s_folder);s_folder=NULL;s_folder_attempted=false;}}
-    refresh_excerpt();
-    rp_boot_mark("excerpt");
+    if (s_scan_pending) s_excerpt[0] = 0;
 }
 static void on_media_lost(app_ctx_t *ctx) {
+    cancel_home_scan();
     app_home_release_clock_cache();
     (void)ctx;clear_cover_cache();memset(&s_current,0,sizeof(s_current));memset(s_recent,0,sizeof(s_recent));
     s_books_cache_valid=false;s_excerpt[0]=0;s_avatar_ready=s_avatar_pending=false;
 }
-static void on_media_ready(app_ctx_t *ctx) {(void)ctx;s_books_cache_valid=false;s_scan_pending=true;avatar_prepare_state();}
+static void on_media_ready(app_ctx_t *ctx) {(void)ctx;cancel_home_scan();s_books_cache_valid=false;s_scan_pending=true;avatar_prepare_state();}
 static app_redraw_t on_tick(app_ctx_t *ctx) {
     clock_base_prepare();
     if(ctx->consumed||(ctx->touch&&ctx->touch->touched))return APP_REDRAW_NONE;
@@ -918,18 +944,45 @@ static app_redraw_t on_tick(app_ctx_t *ctx) {
         if(s_scan_retry_us && esp_timer_get_time() < s_scan_retry_us) return APP_REDRAW_NONE;
         s_scan_retry_us = 0;
         read_pico_sd_info_t info={0};if(read_pico_sd_get_info(&info)==ESP_ERR_NOT_FINISHED)return APP_REDRAW_NONE;
-        s_scan_pending=false;
-        if(info.mounted) {
-            s_cover_generation=book_cover_jobs_begin();
-            memset(&s_current,0,sizeof(s_current));memset(s_recent,0,sizeof(s_recent));s_cover_next=0;
-            scan_books();restore_cover_cache();remember_scan_state(&info);refresh_excerpt();avatar_prepare_state();s_folder_attempted=false;
-            bool found=!home_books_empty();
-            free(s_folder);s_folder=NULL;
-            home_rescan_done(found);
-            return found?APP_REDRAW_PAGE:APP_REDRAW_NONE;
+        if (atomic_load(&home_scan_running)) return APP_REDRAW_NONE;
+        if (!home_scan_started) {
+            pending_excerpt[0]=0;
+            memset(pending_books,0,sizeof(pending_books));
+            snprintf(pending_books_dir,sizeof(pending_books_dir),"%s",app_settings_books_dir());
+            pending_card = info.mounted;
+            pending_read_ok=true;
+            pending_store_revision=book_store_revision();
+            pending_progress_revision=book_progress_revision();
+            atomic_store(&home_scan_cancel,false);
+            atomic_store(&home_scan_running,true);
+#ifdef ESP_PLATFORM
+            if (xTaskCreate(home_scan_task,"home_books",16384,NULL,1,NULL)!=pdPASS) {
+                atomic_store(&home_scan_running,false);
+                s_scan_pending=false;
+                home_rescan_later();
+                return APP_REDRAW_NONE;
+            }
+#else
+            home_scan_task(NULL);
+#endif
+            home_scan_started=true;
+            return APP_REDRAW_NONE;
         }
-        remember_scan_state(&info);
-        home_rescan_later();
+        home_scan_started=false;
+        if (!pending_read_ok || pending_store_revision!=book_store_revision() ||
+            pending_progress_revision!=book_progress_revision() || info.mounted != pending_card ||
+            strcmp(pending_books_dir,app_settings_books_dir()))
+            return APP_REDRAW_NONE;
+        s_scan_pending=false;
+        s_cached_progress_revision=pending_progress_revision;
+        s_current=pending_books[0];
+        memcpy(s_recent,pending_books+1,sizeof(s_recent));
+        s_cover_next=0;
+        restore_cover_cache();remember_scan_state(&info);memcpy(s_excerpt,pending_excerpt,sizeof(s_excerpt));avatar_prepare_state();
+        s_folder_attempted=false;
+        free(s_folder);s_folder=NULL;
+        home_rescan_done(!home_books_empty());
+        return APP_REDRAW_PAGE;
     }
     if(s_view==HOME_ROOT&&s_avatar_pending) {
         ui_avatar_state_t state=ui_avatar_poll(s_avatar_path,60,s_avatar);
@@ -1087,9 +1140,10 @@ static app_redraw_t on_key(app_ctx_t *ctx,int key) {(void)ctx;(void)key;if(s_vie
 static bool no_menu_handle(app_ctx_t *ctx) {(void)ctx;return false;}
 static bool main_page_visible(app_ctx_t *ctx) {(void)ctx;return s_view==HOME_ROOT;}
 static EpdRect area_hint(app_ctx_t *ctx) {(void)ctx;return s_area;}
-static void home_exit(app_ctx_t *ctx){(void)ctx;app_book_shelf_prefetch_cancel();book_cover_jobs_cancel(s_cover_generation);s_cover_generation=0;}
+static void home_before_lock(app_ctx_t *ctx){(void)ctx;cancel_home_scan();}
+static void home_exit(app_ctx_t *ctx){cancel_home_scan();(void)ctx;app_book_shelf_prefetch_cancel();book_cover_jobs_cancel(s_cover_generation);s_cover_generation=0;}
 const app_desc_t app_dashboard={
     .title="首页 Home",.detail="继续阅读与月阅读记录",.enter_full=false,.owns_keys=true,.menu_handle_enabled=no_menu_handle,
-    .main_page_visible=main_page_visible,.persistent_navigation=true,.on_enter=on_enter,.on_exit=home_exit,.on_media_lost=on_media_lost,.on_media_ready=on_media_ready,
+    .main_page_visible=main_page_visible,.persistent_navigation=true,.on_enter=on_enter,.on_exit=home_exit,.on_before_lock=home_before_lock,.on_media_lost=on_media_lost,.on_media_ready=on_media_ready,
     .render=render,.present=present,.on_tick=on_tick,.on_gesture=on_gesture,.on_key=on_key,.area_hint=area_hint,
 };

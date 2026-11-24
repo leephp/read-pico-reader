@@ -3,7 +3,7 @@ from pathlib import Path
 import gzip,hashlib,json,sys,shutil
 root=Path(__file__).resolve().parent
 def pack(dist):
-    asset={}
+    asset={'version':json.loads((dist/'version.json').read_text())['version']}
     for kind,source in [('module','pico.js'),('wasm','pico.wasm'),('data','pico.data')]:
         raw=(dist/source).read_bytes();tag=hashlib.sha256(raw).hexdigest()[:16]
         name='pico-'+tag+('.js' if kind=='module' else '.wasm' if kind=='wasm' else '.data.gz')

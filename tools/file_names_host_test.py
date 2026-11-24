@@ -24,6 +24,7 @@ bool book_weread_cover_metadata(const char *path, char *title, size_t title_cap,
 #include <stdbool.h>
 #include <dirent.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include "book_title.h"
@@ -46,7 +47,7 @@ static const char *folder_root(int n){(void)n;return test_root;}
 static void read_pico_sd_get_info(void*p){(void)p;s_sd.mounted=true;s_sd.free_bytes=1024*1024;}
 static void book_store_notify_changed(void){}
 '''
-for name in ['file_item_name','copy_utf8','is_book_path','file_display_name','sibling_path','copy_selected_item','supported','compare_files','scan_folder']:
+for name in ['file_item_name','copy_utf8','is_book_path','file_display_name','sibling_path','copy_selected_item','supported','compare_file_order','compare_files','read_folder_items','scan_folder']:
     unit+=function(name,s)+'\n'
 
 book=root/'main/apps/app_book.c'
@@ -80,8 +81,7 @@ static unsigned metadata_calls;static bool have_metadata;static const char *cach
 static int book_epub_metadata_cached(const char*p,char*t,size_t n,char*a,size_t z){(void)p;(void)n;++metadata_calls;t[0]=0;snprintf(a,z,"%s",have_metadata?cached_author:"");return have_metadata?0:-1;}
 typedef struct{int favorites,hidden;bool truncated;}shelf_backfill_t;
 '''+shelf_type+'\nstatic shelf_entry_t s_shelf[8];static int shelf_count,shelf_view;\n'
-if 's_background_index_scan' in function('shelf_scan_interrupted',book):
-    unit+='static bool s_background_index_scan,s_shelf_scan_cancelled;\n'
+unit+='static bool s_shelf_scan_cancelled;\n'
 if 'book_progress_load(' not in function('scan_shelf_dir',book):
     unit=unit.replace('static bool book_progress_load(const char*p,uint32_t z,book_progress_t*out){(void)p;(void)z;(void)out;return false;}','')
 if 'book_epub_metadata_cached_for_file' in book.read_text():
