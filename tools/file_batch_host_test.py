@@ -73,7 +73,7 @@ static void rescan_current(void){
 static void leave_move(bool changed){assert(changed);s_view=FILE_VIEW_LIST;strcpy(s_dir,s_move_origin_dir);rescan_current();}
 '''
 unit+='\n'.join(line for line in (root/'main/ui/ui_files_layout.h').read_text().splitlines() if not line.startswith(('#include','#pragma'))) + '\n'
-for name in ['file_item_name','file_selected_count','file_select_rect','file_sort_button','file_batch_button','file_selection_restore','compare_files','file_batch_prepare','file_batch_begin','file_batch_tick','files_before_lock']:
+for name in ['file_item_name','file_selected_count','file_select_rect','file_sort_button','file_batch_button','file_selection_restore','compare_file_order','compare_files','file_batch_prepare','file_batch_begin','file_batch_tick','files_before_lock']:
  unit+=function(name,source)+'\n'
 unit+=r'''
 static void make_file(const char *name){char path[512];host_path(name,path);FILE *file=fopen(path,"wb");assert(file);assert(fwrite("payload",1,7,file)==7);assert(!fclose(file));}

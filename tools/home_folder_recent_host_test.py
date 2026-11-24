@@ -15,8 +15,10 @@ UNIT=r'''
 #include <string.h>
 #include <sys/stat.h>
 typedef struct{uint32_t last_open_s;uint8_t pct;}book_progress_t;
-typedef struct{char path[288];int64_t modified;bool has_progress;book_progress_t progress;}home_book_t;
-static home_book_t s_current,s_recent[6];
+typedef struct{char path[288];int64_t size,modified;bool has_progress;book_progress_t progress;}home_book_t;
+static home_book_t pending_books[7];
+#define s_current pending_books[0]
+#define s_recent (*(home_book_t (*)[6])(pending_books+1))
 static bool readable[7],fast;
 static unsigned contrast=100,progress_loads,stats;
 static int identity(const char *path){int id=-1;assert(sscanf(path,"/books/%d.epub",&id)==1&&id>=0&&id<7);return id;}

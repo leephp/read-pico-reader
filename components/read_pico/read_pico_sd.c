@@ -38,6 +38,7 @@ static sdmmc_card_t* card;
 static int probe_state;
 static bool filesystem_unreadable;
 static bool space_busy;
+static unsigned listing_readers;
 static portMUX_TYPE state_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool media_invalidated;
 static read_pico_sd_info_t cached_info;
@@ -378,9 +379,22 @@ esp_err_t read_pico_sd_get_info(read_pico_sd_info_t* info) {
 }
 
 // 驱动操作期间占用忙状态，不在临界区执行 I/O。/ Reserve busy state across driver I/O outside the critical section.
+bool read_pico_sd_begin_listing(void) {
+    portENTER_CRITICAL(&state_lock);
+    bool ready = !suspended && probe_state != 1 && cached_info.mounted && !media_invalidated;
+    if (ready) ++listing_readers;
+    portEXIT_CRITICAL(&state_lock);
+    return ready;
+}
+void read_pico_sd_end_listing(void) {
+    portENTER_CRITICAL(&state_lock);
+    --listing_readers;
+    portEXIT_CRITICAL(&state_lock);
+}
+
 static bool begin_operation(void) {
     portENTER_CRITICAL(&state_lock);
-    bool ready = probe_state != 1 && !space_busy && !health_busy;
+    bool ready = probe_state != 1 && !space_busy && !health_busy && !listing_readers;
     if (ready) probe_state = 1;
     portEXIT_CRITICAL(&state_lock);
     return ready;
@@ -540,7 +554,7 @@ esp_err_t read_pico_sd_format(void) {
     (void)read_pico_sd_get_info(&current);
     portENTER_CRITICAL(&state_lock);
     bool invalid = media_invalidated;
-    bool busy = probe_state == 1 || space_busy || health_busy;
+    bool busy = probe_state == 1 || space_busy || health_busy || listing_readers;
     if (!invalid && !busy) probe_state = 1;
     portEXIT_CRITICAL(&state_lock);
     if (invalid) return current.present ? ESP_ERR_INVALID_STATE : ESP_ERR_NOT_FOUND;

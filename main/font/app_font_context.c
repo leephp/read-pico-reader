@@ -14,6 +14,9 @@
 #include <sys/stat.h>
 #include "settings.h"
 #include "boot_state.h"
+#ifdef ESP_PLATFORM
+#include "read_pico_sd.h"
+#endif
 #include "ttf_font.h"
 #include "ui_kit.h"
 #include "ui_nav.h"
@@ -36,6 +39,11 @@ static bool system_recovery(void) {
 
 static const char* system_path(char fallback[TTF_FONT_PATH_MAX]) {
     if (system_recovery()) return TTF_FONT_BUILTIN;
+#ifdef ESP_PLATFORM
+    if (!read_pico_sd_io_ready() &&
+        (!app_settings_system_font_path()[0] || !strncmp(app_settings_system_font_path(),"/sdcard/",8)))
+        return TTF_FONT_BUILTIN;
+#endif
     const char* chosen = app_settings_system_font_path();
     if (chosen[0]) return chosen;
     if (snprintf(fallback, TTF_FONT_PATH_MAX, "%s/Hei.ttf", app_settings_fonts_dir()) >= TTF_FONT_PATH_MAX)

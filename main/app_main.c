@@ -175,7 +175,7 @@ void app_main(void) {
     rp_boot_mark("splash");
     // 直接续读不先加载整份系统字体；密码验证仍先使用所选系统字体。
     // Direct reader resume skips loading the whole system face first; PIN authentication still uses the selected UI face.
-    if(!resuming || lock_pin_enabled())app_font_activate_system();
+    if(lock_pin_enabled())app_font_activate_system();
     else (void)ttf_font_open_builtin();
     rp_boot_mark("font");
 
@@ -225,17 +225,12 @@ void app_main(void) {
     (void)app_lock_resume_frame(NULL);
     rp_boot_mark("lock");
     const app_desc_t *first = app_home_page();
+    const char *deferred_book = NULL;
     pico_resume_t resume = {0};
     if (pico_boot_take_resume(&resume)) {
         if (!resume.reader) first = app_at(resume.tab);
+        else if (!strncmp(resume.path, "/sdcard/", 8)) deferred_book = resume.path;
         else {
-            // 挂载等待有界；恢复入口已消费，无卡或资源失败不会反复自动开书。
-            // Bound mount waiting after consuming the checkpoint; absent media or failed resources cannot auto-open in a loop.
-            if (!strncmp(resume.path, "/sdcard/", 8)) {
-                read_pico_sd_info_t info;
-                for (unsigned wait = 0; wait < 150 && read_pico_sd_get_info(&info) == ESP_ERR_NOT_FINISHED; ++wait)
-                    vTaskDelay(pdMS_TO_TICKS(20));
-            }
             if (!strncmp(resume.path, "/flash/books/", 13) && !book_store_flash_ready()) {
                 book_store_root_t roots[BOOK_STORE_ROOT_MAX]; int count;
                 (void)book_store_roots(roots, &count);
@@ -249,7 +244,7 @@ void app_main(void) {
     if (pico_boot_interrupted_book(interrupted, sizeof(interrupted))) first = &app_boot_recovery;
     if(resuming && !lock_pin_enabled()) {
         const bool resume_reader = first == app_at(1) && resume.reader;
-        if (!resume_reader || app_settings_system_font_path()[0]) app_font_activate_system();
+        if (resume_reader && app_settings_system_font_path()[0]) app_font_activate_system();
         if (resume_reader) app_font_activate_reading();
     }
     rp_boot_mark("resume");
@@ -264,5 +259,7 @@ void app_main(void) {
         // 用户修订：深睡一次性恢复上次阅读或主页面；异常启动安全回首页。
         // User revision: resume the last reader/main tab once after deep sleep; abnormal starts safely enter Home.
         .first_app = first,
+        .deferred_book = first == app_home_page() ? deferred_book : NULL,
+        .deferred_fullscreen = resume.fullscreen,
     });
 }

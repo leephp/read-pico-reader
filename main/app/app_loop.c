@@ -1,3 +1,4 @@
+#include <sys/stat.h>
 /*
  * 用户2026-11-22授权：普通纯文字连翻保留37相前缀，停手后统一白12/黑4；扫描时采集输入。
  * User2026-11-22: ordinary text retains its37-phase prefix, defers white12/black4 until idle,
@@ -546,6 +547,9 @@ static void switch_to(
 
 // 菜单页不是 app，单独画。/ The menu is not an app; present it here.
 static void present_menu(app_ctx_t* ctx, const app_desc_t* current, int leaf, menu_feedback_t* feedback) {
+    static bool first_menu = true;
+    if (first_menu) { ESP_LOGI(TAG,"first menu draw %lld ms",esp_timer_get_time()/1000); first_menu = false; }
+
     s_presented_main = NULL;
     s_presented_root = NULL;
     feedback->updates = 0;
@@ -553,6 +557,8 @@ static void present_menu(app_ctx_t* ctx, const app_desc_t* current, int leaf, me
         guard_draw_result(ctx->hl, update_display_white(ctx->hl));
     }
     ui_draw_menu_page(ctx->fb, current, leaf);
+    static bool first_menu_refresh = true;
+    if (first_menu_refresh) { ESP_LOGI(TAG,"first menu refresh %lld ms",esp_timer_get_time()/1000); first_menu_refresh=false; }
     guard_draw_result(ctx->hl, update_display_fast_page(ctx->hl));
 }
 
@@ -689,6 +695,7 @@ static bool poll_media(app_ctx_t* ctx, const app_desc_t* current,
     *mounted = ready;
     if (ready) *invalidated = false;
     if (ready) { s_media_recovery_attempts = 0; s_media_recovery_after_ms = 0; }
+    if (gained) ESP_LOGI(TAG,"TF ready %lld ms",esp_timer_get_time()/1000);
     if (gained || lost) {
         app_book_shelf_prefetch_reset();
         ui_avatar_invalidate(); (void)book_cover_jobs_quiesce(0); book_lock_collage_invalidate();
@@ -825,10 +832,9 @@ void app_loop_run(const app_loop_config_t* config) {
     bool media_invalidated = false;
     app_lock_ignore_for(APP_LOCK_IGNORE_BOOT_MS);
 
-    // The SD probe starts during board setup and is usually ready by the first product frame.
-    // Retry here so the very first bookshelf paint already has a full CJK system face.
-    try_load_saved_sd_font(false);
-    rp_boot_mark("sdfont");
+    // Restore SD-backed resources only after accepting input.
+    const char *deferred_book = config->deferred_book;
+    bool first_touch = true;
     if (current->on_enter != NULL) current->on_enter(&ctx);
     rp_boot_mark("enter");
     poll_media(&ctx, current, &media_mounted, &media_invalidated);
@@ -845,6 +851,7 @@ void app_loop_run(const app_loop_config_t* config) {
     local_latency_init();
 #endif
 
+    last_font_retry_ms = esp_timer_get_time()/1000;
     while (true) {
         unsigned requested_cover_policy = (unsigned)app_settings_main_refresh_mode() | ((unsigned)app_settings_system_contrast() << 8);
         if (requested_cover_policy != cover_policy) {
@@ -917,6 +924,10 @@ void app_loop_run(const app_loop_config_t* config) {
             app_time_service_poll(!touch.touched &&
                 (ctx.now_ms-last_input_ms>=10000||(current->setup_flow&&app_time_service_online_sync_pending())) &&
                 !current->holds_pmu && !usb_storage_active() && !pico_online_busy() && !ble_pt_connected());
+        }
+        if (touch.touched) {
+            deferred_book = NULL;
+            if (first_touch) { ESP_LOGI(TAG,"first touch %lld ms",esp_timer_get_time()/1000); first_touch = false; }
         }
         ctx.pressed = pressed;
         ctx.released = released;
@@ -1312,6 +1323,7 @@ void app_loop_run(const app_loop_config_t* config) {
         // The saved font lives on the card; retry until the mount is ready.
         // The saved font lives on the card; retry until the mount is ready.
         if (!power_dialog_open && !s_quick.open && !usb_storage_active() && current != &app_transfer &&
+            !menu_open && !ctx.consumed && !touch.touched && ctx.now_ms-last_input_ms >= 1000 &&
             ctx.now_ms - last_font_retry_ms >= FONT_RETRY_INTERVAL_MS) {
             last_font_retry_ms = ctx.now_ms;
             if (try_load_saved_sd_font(!media_invalidated)) {
@@ -1387,6 +1399,8 @@ void app_loop_run(const app_loop_config_t* config) {
             if (redraw == APP_REDRAW_PAGE || redraw == APP_REDRAW_FULL) held_key = -1;
             present_page(&ctx, current, &gesture, redraw);
         }
+        if (ctx.user_activity || ctx.request_app || ctx.request_menu || ctx.request_return ||
+            menu_open || s_quick.open || power_dialog_open) deferred_book = NULL;
         if (ctx.user_activity) { last_input_ms = ctx.now_ms; ctx.user_activity = false; }
         // 充电插拔不属于用户输入，不打断锁屏/触摸或覆盖层，只更新已显示的状态栏。
         // Cable changes are not user input; update the drawn header alone without disturbing locks/touch/overlays.
@@ -1460,6 +1474,16 @@ void app_loop_run(const app_loop_config_t* config) {
         // 返回来源优先；普通请求仍按切页优先处理。
         // Return requests win; ordinary requests still prioritize page switches.
         // USB MSC 持有 TF 卡时禁止任何页面切换；必须先安全停止并重新挂载。
+        if (deferred_book && !ctx.consumed && !touch.touched) {
+            read_pico_sd_info_t card = {0};
+            if (read_pico_sd_get_info(&card) != ESP_ERR_NOT_FINISHED) {
+                struct stat st;
+                if (card.mounted && stat(deferred_book,&st)==0 && S_ISREG(st.st_mode) &&
+                    app_book_request_resume(deferred_book,config->deferred_fullscreen))
+                    ctx.request_app = &app_book;
+                deferred_book = NULL;
+            }
+        }
         // Never navigate while USB MSC owns the card; stop and remount it first.
         if (usb_storage_active()) {
             ctx.request_return = false;

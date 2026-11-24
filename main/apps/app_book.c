@@ -253,6 +253,7 @@ extern const app_desc_t app_device_settings;
 #define BOOK_MARGIN_CHOICES 9
 #define BOOK_TOOL_COUNT 5
 #define BOOK_FONT_PAGE 9
+#define BOOK_FONT_PAGER_TOP 1150
 #define BOOKMARK_MAX 24
 #define BOOKMARK_ROWS 6
 
@@ -3246,6 +3247,15 @@ static void draw_key_picker(uint8_t *fb) {
     reader_panel_text_vc(fb, 342, 1170, 26, "返回", EPD_DRAW_ALIGN_CENTER, true);
 }
 
+static int reader_font_pages(int count) {
+    return count > 0 ? (count + BOOK_FONT_PAGE - 1) / BOOK_FONT_PAGE : 1;
+}
+static app_redraw_t reader_font_turn(int action) {
+    int next = ui_pager_target(action, s_font_page, reader_font_pages(ttf_font_count()));
+    if (next == s_font_page) return APP_REDRAW_NONE;
+    s_font_page = next;
+    return APP_REDRAW_PAGE;
+}
 static int reader_font_picker_top(void) { return app_settings_system_font_size()>=150?270:584; }
 static EpdRect reader_font_pick_rect(int slot) {
     bool large=app_settings_system_font_size()>=150;
@@ -3265,9 +3275,9 @@ static void draw_font_picker(uint8_t* fb) {
     epd_draw_line(55, top + 49, 64, top + 58, UI_GRAY_BLACK, fb);
     epd_draw_line(64, top + 58, 73, top + 49, UI_GRAY_BLACK, fb);
     int count = ttf_font_count();
-    int pages = count > 0 ? (count + BOOK_FONT_PAGE - 1) / BOOK_FONT_PAGE : 1;
+    int pages = reader_font_pages(count);
     char current[96];
-    snprintf(current, sizeof(current), "当前选择 · %s  %d/%d", ttf_font_display_name(), s_font_page + 1, pages);
+    snprintf(current, sizeof(current), "当前选择 · %s", ttf_font_display_name());
     fit_text(current, 20, 540);
     ui_text_box(fb,(EpdRect){90,top+94,504,32},20,current,EPD_DRAW_ALIGN_CENTER,false);
     int start = s_font_page * BOOK_FONT_PAGE;
@@ -3295,6 +3305,11 @@ static void draw_font_picker(uint8_t* fb) {
     // 字体名称预览归还真实阅读字库后，再确认本次选择是否回退。
     // Observe the actual reader face after name previews have restored it.
     reader_font_choice_finish();
+    if (pages > 1) {
+        char label[24];
+        snprintf(label, sizeof(label), "%d / %d", s_font_page + 1, pages);
+        ui_pager_draw_at(fb, label, s_font_page, pages, false, UI_PAGER_NONE, BOOK_FONT_PAGER_TOP);
+    }
     if (!count) reader_panel_text_vc(fb, 342, 780, 24, "所选字体目录中没有可用字体", EPD_DRAW_ALIGN_CENTER, false);
 }
 #if defined(ESP_PLATFORM) && defined(__GNUC__) && !defined(__clang__)
@@ -5664,10 +5679,10 @@ typedef struct {
     DIR *dir;
     char path[BOOK_STORE_PATH_MAX];
 } shelf_scan_frame_t;
-static bool s_shelf_scan_yield_to_touch, s_shelf_scan_cancelled, s_background_index_scan;
+static bool s_shelf_scan_yield_to_touch, s_shelf_scan_cancelled;
 static bool shelf_scan_interrupted(app_ctx_t *ctx) {
     if (s_view != SHELF) return false;
-    if (!s_background_index_scan && app_poll_main_navigation(ctx)) return true;
+    if (app_poll_main_navigation(ctx)) return true;
     if (s_shelf_scan_yield_to_touch && app_touch_input_pending(ctx)) s_shelf_scan_cancelled = true;
     return s_shelf_scan_cancelled;
 }
@@ -6066,20 +6081,9 @@ void app_book_shelf_prefetch_first(app_ctx_t *ctx) {
             // 首次进书架时核对旧索引。/ Reconcile the restored catalog on first shelf entry.
             s_shelf_recheck_on_return = true;
         } else {
-            // 新卡可以在主页面建立索引，触摸到达时保留旧目录并退出。
-            // Build a catalog for a new card on an idle root, and roll back on input.
-            const book_view_t previous_view = s_view;
-            s_view = SHELF;
-            s_background_index_scan = true;
-            scan_shelf(&shelf_ctx);
-            s_background_index_scan = false;
-            s_view = previous_view;
-            if (!s_shelf_cache_valid) {
-                s_scan_pending = false;
-                s_first_page_warm.next_ms = ctx->now_ms + 3000;
-                return;
-            }
-            s_shelf_recheck_on_return = false;
+            // Build a missing catalog on bookshelf entry. A speculative scan here delays home navigation.
+            s_first_page_warm.next_ms = ctx->now_ms + 3000;
+            return;
         }
     } else {
         if (s_shelf_order != order || s_cache_shelf_style != style) {
@@ -6135,7 +6139,7 @@ static void scan_shelf(app_ctx_t* ctx) {
     char previous_message[sizeof(s_message)], previous_storage[sizeof(s_storage)];
     char previous_warning[sizeof(s_shelf_warning)];
     s_shelf_scan_cancelled = false;
-    s_shelf_scan_yield_to_touch = s_background_index_scan || (s_view == SHELF && previous_visible > 0);
+    s_shelf_scan_yield_to_touch = s_view == SHELF && previous_visible > 0;
     if (s_shelf_scan_yield_to_touch) {
         for (int i = 0; i < previous_categories; ++i) previous_available[i] = s_categories[i].available;
         memcpy(previous_message, s_message, sizeof(previous_message));
@@ -7458,6 +7462,8 @@ static app_redraw_t reader_panel_action(app_ctx_t* ctx, uint16_t x, uint16_t y) 
             s_reader_panel = READER_PANEL_FONT_SETTINGS;
             return APP_REDRAW_PAGE;
         }
+        int action = ui_pager_hit_at(x, y, BOOK_FONT_PAGER_TOP);
+        if (action != UI_PAGER_NONE) return reader_font_turn(action);
         int count = ttf_font_count(), start = s_font_page * BOOK_FONT_PAGE;
         for (int slot = 0; slot < BOOK_FONT_PAGE && start + slot < count; ++slot) {
             EpdRect card = reader_font_pick_rect(slot);
@@ -8829,12 +8835,7 @@ static app_redraw_t gesture_event(app_ctx_t* ctx, const ui_gesture_event_t* ev) 
     }
     if (s_view == READING && s_reader_panel == READER_PANEL_FONT_PICKER &&
         (ev->type == UI_GESTURE_SWIPE_U || ev->type == UI_GESTURE_SWIPE_D)) {
-        int count = ttf_font_count();
-        int pages = count > 0 ? (count + BOOK_FONT_PAGE - 1) / BOOK_FONT_PAGE : 1;
-        if (ev->type == UI_GESTURE_SWIPE_U && s_font_page + 1 < pages) ++s_font_page;
-        else if (ev->type == UI_GESTURE_SWIPE_D && s_font_page > 0) --s_font_page;
-        else return APP_REDRAW_NONE;
-        return APP_REDRAW_PAGE;
+        return reader_font_turn(ev->type == UI_GESTURE_SWIPE_U ? UI_PAGER_NEXT : UI_PAGER_PREVIOUS);
     }
     EpdRect start_rect = {0}, end_rect = {0};
     int start = control_at(ctx, ev->x0, ev->y0, &start_rect);
