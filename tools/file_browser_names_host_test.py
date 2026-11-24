@@ -16,6 +16,7 @@ unit = r'''
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -69,7 +70,7 @@ static int file_tree_copy(const char *from,const char *to,uint64_t free_bytes){
 }
 '''
 for name in ['file_item_name', 'copy_utf8', 'sibling_path', 'copy_selected_item', 'move_selected',
-             'supported', 'compare_files', 'scan_folder', 'open_selected']:
+             'supported', 'compare_file_order','compare_files','read_folder_items', 'scan_folder', 'open_selected']:
     unit += function(name, source)+'\n'
 unit += r'''
 static void name_repeat(char *out,const char *glyph,unsigned n,const char *tail){

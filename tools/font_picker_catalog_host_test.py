@@ -58,7 +58,7 @@ static int s_view=READING,s_reader_panel=READER_PANEL_FONT_PICKER;
 static bool s_font_sync_confirm,s_font_picker_open,capture_rows;
 static char s_notice[96],s_font_sync_path[192],saved[192];
 static ttf_font_item_t fonts[TTF_FONT_MAX];
-static EpdRect boxes[16];static int rows,selected,previews,restores;
+static EpdRect boxes[16];static int rows,selected,previews,restores,pager_top;
 int ttf_font_count(void){return count;}
 int ttf_font_scan(void){return count;}
 const ttf_font_item_t*ttf_font_item(int i){assert(i>=0&&i<count);return &fonts[i];}
@@ -108,26 +108,27 @@ static app_redraw_t select_reading_font_item(app_ctx_t*ctx,const ttf_font_item_t
 unit += layout
 for name in ('ui_pager_rect_at','ui_pager_hit_at','ui_pager_target'):
     unit += function(name, root/'main/ui/ui_kit.c')+'\n'
-unit += 'static void ui_pager_draw_at(uint8_t*f,const char*t,int page,int pages,bool keys,int pressed,int top){(void)f;(void)t;(void)keys;(void)pressed;assert(page>=0&&page<pages&&top+50<UI_NAV_TOP);}'+'\n'
+unit += 'static void ui_pager_draw_at(uint8_t*f,const char*t,int page,int pages,bool keys,int pressed,int top){(void)f;(void)t;(void)keys;(void)pressed;pager_top=top;assert(page>=0&&page<pages&&top+50<=1216);}'+'\n'
 
 for name in ('settings_viewport_end', 'settings_stacked', 'system_font_layout', 'system_font_item_rect','draw_system_font_picker','system_font_picker_gesture'):
     unit += function(name, settings) + '\n'
 unit += 'static void system_paint(void){capture_rows=true;draw_system_font_picker(NULL);}'+'\n'
 unit += 'static app_redraw_t system_tap(int x,int y){ui_gesture_event_t e={UI_GESTURE_TAP,x,y};return system_font_picker_gesture(&e);}'+'\n'
 unit += 'static app_redraw_t system_page(int action){EpdRect q=ui_pager_rect_at(action,956);return system_tap(q.x+q.width/2,q.y+q.height/2);}'+'\n'
-unit += re.search(r'^#define BOOK_FONT_PAGE .*$', r, re.M)[0] + '\n'
-for name in ('reader_font_picker_top', 'reader_font_pick_rect', 'draw_font_picker'):
+for name in ('BOOK_FONT_PAGE', 'BOOK_FONT_PAGER_TOP'):
+    unit += re.search(r'^#define ' + name + r' .*$', r, re.M)[0] + '\n'
+for name in ('reader_font_pages', 'reader_font_turn', 'reader_font_picker_top', 'reader_font_pick_rect', 'draw_font_picker'):
     unit += function(name, reader) + '\n'
 unit += 'static app_redraw_t reader_tap(int x,int y){app_ctx_t c={0};app_ctx_t*ctx=&c;' + reader_choose + 'return APP_REDRAW_NONE;}\n'
 unit += 'static app_redraw_t reader_swipe(int type){struct{int type;}e={type};const typeof(e)*ev=&e;' + reader_swipe + 'return APP_REDRAW_NONE;}\n'
 unit += r'''
 int main(void){
  for(int i=0;i<TTF_FONT_MAX;++i){snprintf(fonts[i].name,sizeof(fonts[i].name),"Font %03d",i);snprintf(fonts[i].path,sizeof(fonts[i].path),"/fonts/Font-%03d.ttf",i);}
- const int counts[]={0,1,24,25,127,128};
+ const int counts[]={0,1,9,10,24,25,127,128};
  for(scale=100;scale<=200;scale+=10)for(unsigned c=0;c<sizeof(counts)/sizeof(counts[0]);++c){
   count=counts[c];s_font_page=0;s_page=SETTINGS_SYSTEM_FONT;int visited=0;
   do{
-   rows=0;capture_rows=false;system_paint();assert(rows>0);
+   rows=0;capture_rows=false;system_paint();assert(rows>0&&pager_top+50<UI_NAV_TOP);
    for(int i=0;i<rows;++i){EpdRect q=boxes[i];int index=s_font_page*SYSTEM_FONT_PAGE_SIZE+i;
     assert(system_tap(q.x+q.width/2,q.y+q.height/2)==APP_REDRAW_PAGE);
     assert(!strcmp(saved,index?fonts[index-1].path:""));++visited;}
@@ -137,16 +138,30 @@ int main(void){
   while(system_page(UI_PAGER_PREVIOUS)!=APP_REDRAW_NONE){}assert(s_font_page==0);
   s_font_page=0;s_reader_panel=READER_PANEL_FONT_PICKER;visited=0;
   do{
-   rows=previews=restores=0;draw_font_picker(NULL);assert(rows==previews&&restores==1);
+   pager_top=-1;rows=previews=restores=0;draw_font_picker(NULL);assert(rows==previews&&restores==1);
+   assert(pager_top==(count>BOOK_FONT_PAGE?BOOK_FONT_PAGER_TOP:-1));
    for(int i=0;i<rows;++i){EpdRect q=boxes[i];selected=-1;
+    assert(q.y+q.height<=BOOK_FONT_PAGER_TOP);
     assert(reader_tap(q.x+q.width/2,q.y+q.height/2)==APP_REDRAW_PAGE);
     assert(selected==s_font_page*BOOK_FONT_PAGE+i);++visited;}
-  }while(reader_swipe(UI_GESTURE_SWIPE_U)!=APP_REDRAW_NONE);
+     selected=-1;
+   EpdRect next=ui_pager_rect_at(UI_PAGER_NEXT,BOOK_FONT_PAGER_TOP);
+   int moved=reader_tap(next.x+1,next.y+1);
+   assert(selected==-1);
+   if(moved==APP_REDRAW_NONE)break;
+  }while(1);
   assert(visited==count);last=s_font_page;
   assert(reader_swipe(UI_GESTURE_SWIPE_U)==APP_REDRAW_NONE&&s_font_page==last);
   while(reader_swipe(UI_GESTURE_SWIPE_D)!=APP_REDRAW_NONE){}assert(s_font_page==0);
  }
- puts("PASS: actual Pico system/reader picker paint,hits and bidirectional paging;0/1/24/25/127/128 imports,11 scales,all128 selectable,no out-of-bounds rows,one-page preview loading and active-face restoration");
+ EpdRect next=ui_pager_rect_at(UI_PAGER_NEXT,BOOK_FONT_PAGER_TOP);
+ assert(reader_swipe(UI_GESTURE_SWIPE_U)==APP_REDRAW_PAGE&&s_font_page==1);
+ for(int action=UI_PAGER_LAST;action>=UI_PAGER_FIRST;--action){
+  EpdRect q=ui_pager_rect_at(action,next.y);
+  int expected=ui_pager_target(action,s_font_page,reader_font_pages(count));
+  reader_tap(q.x+1,q.y+1);assert(s_font_page==expected&&selected==-1);
+ }
+ puts("PASS: actual Pico system/reader picker paint,hits and bidirectional paging;0/1/9/10/24/25/127/128 imports,11 scales,all128 selectable,no out-of-bounds rows,one-page preview loading and active-face restoration");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='pico-font-picker-') as folder:

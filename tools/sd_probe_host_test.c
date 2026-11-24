@@ -128,6 +128,12 @@ int main(void) {
     assert(read_pico_sd_get_info(&info) == ESP_OK);
     assert(info.present && info.mounted && mount_calls == 1);
 
+    assert(read_pico_sd_begin_listing());
+    assert(read_pico_sd_sync()==ESP_ERR_NOT_FINISHED);
+    assert(read_pico_sd_remount()==ESP_ERR_NOT_FINISHED);
+    assert(read_pico_sd_format()==ESP_ERR_NOT_FINISHED);
+    assert(unmount_calls==0);
+    read_pico_sd_end_listing();
     detect_failure = true;
     assert(read_pico_sd_get_info(&info) == ESP_OK && info.mounted && info.capacity_bytes);
     assert(read_pico_sd_start_probe() == ESP_OK && mount_calls == 1);

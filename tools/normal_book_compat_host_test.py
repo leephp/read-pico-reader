@@ -36,6 +36,13 @@ typedef struct {uint32_t file_size;uint16_t chapter;uint32_t byte_off;uint8_t px
 typedef bool (*book_progress_visit_fn)(const char*,const book_progress_t*,void*);
 typedef struct {char path[288];book_progress_t progress;} saved_t;
 static saved_t records[5];
+static bool s_shelf_open_queued,s_requested_resume_mode,s_chapters_started;
+static bool app_settings_reader_default_fullscreen(void){return false;}
+static void shelf_added_load(void){}
+static int shelf_order_mode(void){return 1;}
+#define book_weread_cover_metadata(...) false
+#define book_author_clean_display(a,n) ((void)(n),*(a)!=0)
+#define book_name_from_path(p,t,n,a,z) ((void)(a),(void)(z),book_title_from_path(p,t,n))
 static char last[288],books_root[288];
 static unsigned revision=1,s_progress_revision;
 static int reserves,sorts;
@@ -75,8 +82,16 @@ for name in ('app_book_request_open','app_book_request_open_from_home','app_book
              'shelf_backfill_visit','shelf_backfill_read_books','refresh_cached_progress'):
     unit += function(name, reader) + '\n'
 unit += r'''
-typedef struct {char path[288],title[256],author[128];time_t modified;bool has_progress;book_progress_t progress;} home_book_t;
-static home_book_t s_current,s_recent[6];
+typedef struct {char path[288],title[256],author[128];off_t size;time_t modified;bool has_progress;book_progress_t progress;} home_book_t;
+#include <stdatomic.h>
+static home_book_t pending_books[7];
+#define s_current pending_books[0]
+#define s_recent (*(home_book_t (*)[6])(pending_books+1))
+#define pending_books_dir books_root
+static bool pending_card=true;
+static atomic_bool home_scan_cancel;
+static char pending_excerpt[128];
+static void book_excerpt_load(const char*p,int ch,char*s){(void)p;(void)ch;*s=0;}
 static home_book_t *book_at(int index){return index==0?&s_current:&s_recent[index-1];}
 static const char *app_settings_books_dir(void){return books_root;}
 static bool book_store_flash_ready(void){return false;}

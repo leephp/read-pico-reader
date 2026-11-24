@@ -19,6 +19,11 @@
 #include "ui_avatar.h"
 #include "book_cover_jobs.h"
 #include <dirent.h>
+#include <stdatomic.h>
+#ifdef ESP_PLATFORM
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#endif
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -77,7 +82,15 @@ static bool files_alloc(void) {
 static int s_count, s_folder, s_page;
 static int s_requested_folder = -1;
 static int s_counts[3];
+#ifdef ESP_PLATFORM
+static char count_category_paths[2][288];
+static int category_counts[2];
+static char s_book_count_root[sizeof(((file_item_t *)0)->path)];
+static atomic_bool s_book_count_running, s_book_count_cancel;
+static bool s_book_count_started, s_book_count_error;
+#else
 static file_search_t *s_book_count_search;
+#endif
 static int s_book_count_total;
 static bool s_book_count_dirty,s_book_count_incomplete;
 static bool s_scan_pending;
@@ -558,32 +571,30 @@ static bool supported(int folder, const char *name) {
     return !strcasecmp(ext, ".ttf") || !strcasecmp(ext, ".otf");
 }
 
-static int compare_files(const void *left, const void *right) {
+static int compare_file_order(const void *left, const void *right, int sort, bool desc) {
     const file_item_t *a=left,*b=right;
     if(a->is_dir!=b->is_dir)return a->is_dir?-1:1;
     int order=0;
-    if(s_file_sort==1&&a->modified!=b->modified)order=a->modified<b->modified?-1:1;
-    else if(s_file_sort==2&&a->size!=b->size)order=a->size<b->size?-1:1;
+    if(sort==1&&a->modified!=b->modified)order=a->modified<b->modified?-1:1;
+    else if(sort==2&&a->size!=b->size)order=a->size<b->size?-1:1;
     else order=strcasecmp(file_item_name(a),file_item_name(b));
     if(!order)order=strcmp(a->path,b->path);
-    return s_file_desc?-order:order;
+    return desc?-order:order;
 }
 
-static void scan_folder(int folder) {
-    if(s_file_query[0]&&s_view!=FILE_VIEW_MOVE){file_search_start();return;}
-    file_search_stop();
-    if (!files_alloc()) return;
-    s_count = s_page = 0;
-    s_message[0] = 0;
-    read_pico_sd_get_info(&s_sd);
-    if (!s_sd.mounted) { snprintf(s_message, sizeof(s_message), "TF 卡尚未挂载"); return; }
-    const char *root = folder_root(folder);
+static int compare_files(const void *left,const void *right) {
+    return compare_file_order(left,right,s_file_sort,s_file_desc);
+}
+
+static int read_folder_items(int folder, const char *root, bool dirs_only,
+                             file_item_t *items, const atomic_bool *cancel) {
+    int count = 0;
     DIR *dir = opendir(root);
-    if (!dir) { snprintf(s_message, sizeof(s_message), "目录不存在：%.60s", root); return; }
+    if (!dir) return -1;
     struct dirent *entry;
-    while (s_count < FILE_MAX && (entry = readdir(dir))) {
+    while ((!cancel || !atomic_load(cancel)) && count < FILE_MAX && (entry = readdir(dir))) {
         if (entry->d_name[0] == '.' || !strncmp(entry->d_name, "._", 2)) continue;
-        file_item_t *item = &s_files[s_count];
+        file_item_t *item = &items[count];
         item->selected=false;item->modified=0;
         int path_n=snprintf(item->path,sizeof(item->path),"%s/%s",root,entry->d_name);
         if(path_n<0||(size_t)path_n>=sizeof(item->path))continue;
@@ -599,16 +610,113 @@ static void scan_folder(int folder) {
             if (probe) { is_dir = true; item->size = 0; closedir(probe); }
         }
         if (!is_dir && !is_file) continue;
-        if (s_view == FILE_VIEW_MOVE && !is_dir) continue;
+        if (dirs_only && !is_dir) continue;
         // 书籍分类保留子文件夹，复用目录浏览进入任意层级。/ Keep book subfolders and reuse directory navigation at any depth.
         if (folder != 3 && !(folder == 0 && is_dir) && (!is_file || !supported(folder, entry->d_name))) continue;
         item->is_dir = is_dir;
-        ++s_count;
+        ++count;
     }
     closedir(dir);
+    return count;
+}
+
+#ifdef ESP_PLATFORM
+// Only one worker owns the staging list. Queue only the latest request while it drains.
+static atomic_bool dir_running, dir_cancel;
+static bool dir_requested, dir_started;
+static char dir_root[sizeof(s_dir)];
+static int dir_folder, dir_count;
+static bool dir_dirs_only;
+static _Atomic(file_item_t *) dir_result;
+static int dir_sort;
+static bool dir_desc;
+static int compare_dir_items(const void *a,const void *b) {
+    return compare_file_order(a,b,dir_sort,dir_desc);
+}
+
+static void cancel_directory(void) {
+    atomic_store(&dir_cancel,true);
+    free(atomic_exchange(&dir_result,NULL));
+    dir_started = dir_requested = false;
+}
+static void directory_task(void *arg) {
+    file_item_t *items=arg;
+    dir_count = -1;
+    if (!atomic_load(&dir_cancel) && read_pico_sd_begin_listing()) {
+        dir_count = read_folder_items(dir_folder,dir_root,dir_dirs_only,items,&dir_cancel);
+        read_pico_sd_end_listing();
+        if (dir_count>1 && !atomic_load(&dir_cancel))
+            qsort(items,dir_count,sizeof(*items),compare_dir_items);
+    }
+    atomic_store(&dir_result,items);
+    if (atomic_load(&dir_cancel)) free(atomic_exchange(&dir_result,NULL));
+    atomic_store(&dir_running,false);
+    vTaskDelete(NULL);
+}
+static app_redraw_t directory_tick(void) {
+    if (atomic_load(&dir_running) || atomic_load(&s_book_count_running)) return APP_REDRAW_NONE;
+    if (dir_requested) {
+        dir_requested=false;
+        file_item_t *items=heap_caps_calloc(FILE_MAX,sizeof(*items),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+        dir_folder=s_folder;
+        dir_sort=s_file_sort; dir_desc=s_file_desc;
+        dir_dirs_only=s_view==FILE_VIEW_MOVE;
+        snprintf(dir_root,sizeof(dir_root),"%s",folder_root(dir_folder));
+        atomic_store(&dir_cancel,false);
+        atomic_store(&dir_running,true);
+        if (items && xTaskCreate(directory_task,"file_dir",4096,items,1,NULL)==pdPASS) {
+            dir_started=true;
+            return APP_REDRAW_NONE;
+        }
+        free(items);
+        atomic_store(&dir_running,false);
+        snprintf(s_message,sizeof(s_message),"无法读取目录，内存不足");
+        return APP_REDRAW_PAGE;
+    }
+    if (!dir_started) return APP_REDRAW_NONE;
+    dir_started=false;
+    file_item_t *items=atomic_exchange(&dir_result,NULL);
+    if (dir_folder!=s_folder || strcmp(dir_root,folder_root(s_folder))) {
+        free(items);
+        return APP_REDRAW_NONE;
+    }
+    if (dir_count<0) { free(items); snprintf(s_message,sizeof(s_message),"无法读取目录：%.60s",dir_root); }
+    else {
+        free(s_files);
+        s_files=items;
+        s_count=dir_count;
+        if (dir_sort!=s_file_sort || dir_desc!=s_file_desc)
+            qsort(s_files,s_count,sizeof(*s_files),compare_files);
+        file_selection_restore();
+        if (dir_folder==1 || dir_folder==2) s_counts[dir_folder]=s_count;
+        s_message[0]=0;
+    }
+    return APP_REDRAW_PAGE;
+}
+#endif
+
+static void scan_folder(int folder) {
+    if(s_file_query[0]&&s_view!=FILE_VIEW_MOVE){file_search_start();return;}
+    file_search_stop();
+    s_count = s_page = 0;
+#ifndef ESP_PLATFORM
+    if (!files_alloc()) { snprintf(s_message,sizeof(s_message),"内存不足"); return; }
+#endif
+    s_message[0] = 0;
+    read_pico_sd_get_info(&s_sd);
+    if (!s_sd.mounted) { snprintf(s_message, sizeof(s_message), "TF 卡尚未挂载"); return; }
+#ifdef ESP_PLATFORM
+    dir_requested=true;
+    snprintf(s_message,sizeof(s_message),"正在读取目录…");
+    return;
+#else
+    const char *root = folder_root(folder);
+    s_count=read_folder_items(folder,root,s_view==FILE_VIEW_MOVE,s_files,NULL);
+    if (s_count<0) { s_count=0; snprintf(s_message,sizeof(s_message),"目录不存在：%.60s",root); return; }
     qsort(s_files, s_count, sizeof(s_files[0]), compare_files);
     file_selection_restore();
     if (folder > 0 && folder < 3) s_counts[folder] = s_count;
+#endif
 }
 
 static void file_search_stop(void){file_search_close(s_file_search);s_file_search=NULL;file_book_count_invalidate();}
@@ -644,25 +752,104 @@ static app_redraw_t file_search_clear(void){
     file_search_stop();s_file_query[0]=s_search_root[0]=0;scan_folder(s_folder);return APP_REDRAW_PAGE;
 }
 static void rescan_current(void) {
-    scan_folder(s_folder >= 0 ? s_folder : 3);
+    if (s_folder>=0) scan_folder(s_folder);
+    else { file_search_stop(); s_scan_pending=true; }
 }
 
 // 书籍总数独立于当前目录/列表上限；空闲分片遍历，离开/写操作前关闭目录。
 // Count books independently of list bounds; slice traversal when idle and close before leaving/writes.
 static void file_book_count_invalidate(void){
-    file_search_close(s_book_count_search);s_book_count_search=NULL;s_book_count_dirty=true;
+#ifdef ESP_PLATFORM
+    cancel_directory();
+    atomic_store(&s_book_count_cancel, true);
+
+    s_book_count_started = false;
+#else
+    file_search_close(s_book_count_search);
+    s_book_count_search = NULL;
+#endif
+    s_book_count_dirty = true;
 }
 static void file_book_count_visit(const char *path,const struct stat *info,void *ctx){
-    (void)ctx;if(!S_ISREG(info->st_mode))return;
-    const char *relative=path+strlen(folder_root(0));
+    if(!S_ISREG(info->st_mode))return;
+    const char *relative=path+strlen((const char *)ctx);
     for(const char *p=relative;*p;++p)if(*p=='/'&&p[1]=='.')return;
     const char *name=strrchr(path,'/');
     if(supported(0,name?name+1:path))++s_book_count_total;
 }
+#ifdef ESP_PLATFORM
+static void file_book_count_worker(void *arg) {
+    (void)arg;
+    file_search_t *search = NULL;
+    bool lease = !atomic_load(&s_book_count_cancel) && read_pico_sd_begin_listing();
+    if (lease) {
+        for (unsigned i=0;i<2;++i) {
+            category_counts[i]=0;
+            if (atomic_load(&s_book_count_cancel)) break;
+            DIR *dir=opendir(count_category_paths[i]);
+            if (!dir) continue;
+            struct dirent *entry;
+            while (!atomic_load(&s_book_count_cancel) && (entry=readdir(dir)))
+                if (supported(i+1,entry->d_name)) ++category_counts[i];
+            closedir(dir);
+        }
+    }
+    if (lease && !atomic_load(&s_book_count_cancel))
+        search = file_search_begin_all(s_book_count_root, file_book_count_visit, s_book_count_root);
+    unsigned entries = 0;
+    while (search && !file_search_stats(search).done &&
+           !atomic_load(&s_book_count_cancel) && read_pico_sd_io_ready()) {
+        file_search_step(search, 1);
+        if (++entries % 16 == 0) vTaskDelay(1);
+    }
+    file_search_stats_t stats = file_search_stats(search);
+    s_book_count_error = !search || !stats.done || stats.errors != 0;
+    file_search_close(search);
+    if (lease) read_pico_sd_end_listing();
+    atomic_store(&s_book_count_running, false);
+    vTaskDelete(NULL);
+}
+#endif
+
+static bool file_book_count_pending(void) {
+#ifdef ESP_PLATFORM
+    return s_book_count_dirty || s_book_count_started;
+#else
+    return s_book_count_dirty || s_book_count_search;
+#endif
+}
+
 static bool file_book_count_tick(void){
+#ifdef ESP_PLATFORM
+    if (atomic_load(&s_book_count_running) || atomic_load(&dir_running)) return false;
+    if (s_book_count_dirty) {
+        s_book_count_dirty = false;
+        s_book_count_total = 0;
+        for (int i=0;i<2;++i) snprintf(count_category_paths[i],sizeof(count_category_paths[i]),"%s",folder_root(i+1));
+        int n = snprintf(s_book_count_root, sizeof(s_book_count_root), "%s", folder_root(0));
+        if (n >= 0 && (size_t)n < sizeof(s_book_count_root)) {
+            atomic_store(&s_book_count_cancel, false);
+            atomic_store(&s_book_count_running, true);
+            if (xTaskCreate(file_book_count_worker, "file_count", 4096, NULL, 1, NULL) == pdPASS) {
+                s_book_count_started = true;
+                return false;
+            }
+            atomic_store(&s_book_count_running, false);
+        }
+        s_counts[0] = 0;
+        s_book_count_incomplete = true;
+        return true;
+    }
+    if (!s_book_count_started || atomic_load(&s_book_count_running)) return false;
+    s_book_count_started = false;
+    memcpy(s_counts+1,category_counts,sizeof(category_counts));
+    s_counts[0] = s_book_count_total;
+    s_book_count_incomplete = s_book_count_error;
+    return true;
+#else
     if(s_book_count_dirty){
         s_book_count_dirty=false;s_book_count_total=0;s_book_count_incomplete=false;
-        s_book_count_search=file_search_begin_all(folder_root(0),file_book_count_visit,NULL);
+        s_book_count_search=file_search_begin_all(folder_root(0),file_book_count_visit,(void *)folder_root(0));
         if(!s_book_count_search){s_counts[0]=0;s_book_count_incomplete=true;return true;}
     }
     if(!s_book_count_search)return false;
@@ -671,14 +858,18 @@ static bool file_book_count_tick(void){
     if(!stats.done)return false;
     s_counts[0]=s_book_count_total;s_book_count_incomplete=stats.errors!=0;
     file_search_close(s_book_count_search);s_book_count_search=NULL;return true;
+#endif
 }
 static void file_count_label(int folder,char *out,size_t size){
-    if(folder==0&&(s_book_count_dirty||s_book_count_search))snprintf(out,size,"统计中");
+    if(file_book_count_pending())snprintf(out,size,"统计中");
     else snprintf(out,size,"%d%s %s",s_counts[folder],folder==0&&s_book_count_incomplete?"+":"",folder==0?"本":folder==1?"张":"款");
 }
 static int count_root(int folder) {
     if (!s_sd.mounted) return 0;
     if(folder==0){file_book_count_invalidate();return s_counts[0];}
+#ifdef ESP_PLATFORM
+    return s_counts[folder];
+#else
     DIR *dir = opendir(folder_root(folder));
     if (!dir) return 0;
     int count = 0;
@@ -686,6 +877,7 @@ static int count_root(int folder) {
     while ((entry = readdir(dir))) if (supported(folder, entry->d_name)) ++count;
     closedir(dir);
     return count;
+#endif
 }
 
 // 列表行的文件夹 / 文档图标，来自 Lucide；盒子 46 像素，中心对到原来的图形中心。
@@ -960,16 +1152,12 @@ static void on_enter(app_ctx_t *ctx) {
     snprintf(s_dir, sizeof(s_dir), "/sdcard");
     s_page = 0; s_scan_pending = true;
     read_pico_sd_start_probe();
-    const esp_err_t info_status=read_pico_sd_get_info(&s_sd);
+    read_pico_sd_get_info(&s_sd);
+    s_count=0;
     s_space_poll_ms=ctx->now_ms;
     s_sd_format_confirm = false;
     s_sd_notice[0] = 0;
-    for (int i = 0; i < 3; ++i) s_counts[i] = count_root(i);
-    if (s_folder >= 0) scan_folder(s_folder);
-    else scan_folder(3);
-    // 已完成首帧目录扫描时不在下一拍重复统计并推整页；挂载/分配未完成仍沿原重试路径。
-    // Do not repeat a completed first-frame scan and whole-page present on the next tick; retain mount/allocation retries.
-    if(info_status!=ESP_ERR_NOT_FINISHED&&s_files)s_scan_pending=false;
+
 }
 static void on_media_lost(app_ctx_t *ctx) {
     file_search_stop();s_file_query[0]=s_search_root[0]=0;
@@ -1001,8 +1189,11 @@ static app_redraw_t on_tick(app_ctx_t *ctx) {
         if(stats.done||ctx->now_ms-s_search_painted_ms>=500){s_search_painted_ms=ctx->now_ms;return APP_REDRAW_PAGE;}
         return APP_REDRAW_NONE;
     }
+#ifdef ESP_PLATFORM
+    if (!s_scan_pending && (dir_requested || dir_started)) return directory_tick();
+#endif
     if(!s_scan_pending&&s_view==FILE_VIEW_LIST&&s_folder<0&&s_sd.mounted&&!ctx->consumed&&
-       !(ctx->touch&&ctx->touch->touched)&&(s_book_count_dirty||s_book_count_search)){
+       !(ctx->touch&&ctx->touch->touched)&&file_book_count_pending()){
         return file_book_count_tick()?APP_REDRAW_PAGE:APP_REDRAW_NONE;
     }
     if (!s_scan_pending) {
@@ -1023,7 +1214,7 @@ static app_redraw_t on_tick(app_ctx_t *ctx) {
     s_space_poll_ms=ctx->now_ms;
     for (int i = 0; i < 3; ++i) s_counts[i] = count_root(i);
     if (s_folder >= 0) scan_folder(s_folder);
-    else scan_folder(3);
+    else { s_count=0; s_page=0; }
     return APP_REDRAW_PAGE;
 }
 
@@ -1311,7 +1502,7 @@ static app_redraw_t on_gesture(app_ctx_t *ctx, const ui_gesture_event_t *ev) {
             if (s_folder == 3 && strcmp(s_dir, "/sdcard")) {
                 char *slash = strrchr(s_dir, '/'); if (slash) *slash = 0;
                 scan_folder(3);
-            } else s_folder = -1;
+            } else { file_search_stop(); s_folder = -1; }
             return APP_REDRAW_PAGE;
         }
         int row = file_entry_hit(ev->x0,ev->y0);
@@ -1347,11 +1538,13 @@ static app_redraw_t on_gesture(app_ctx_t *ctx, const ui_gesture_event_t *ev) {
         } else {
             s_sd_format_confirm = false;
             snprintf(s_sd_notice, sizeof(s_sd_notice), "正在格式化…");
-            esp_err_t err = (book_cover_jobs_quiesce(2000) && ui_avatar_quiesce(2000)) ? read_pico_sd_format() : ESP_ERR_NOT_FINISHED;
+            esp_err_t err = (book_cover_jobs_quiesce(0) && ui_avatar_quiesce(0)) ? read_pico_sd_format() : ESP_ERR_NOT_FINISHED;
             read_pico_sd_get_info(&s_sd);
             if (err == ESP_OK) {
                 s_sd_notice[0] = 0;
                 s_scan_pending = true;
+            } else if (err==ESP_ERR_NOT_FINISHED) {
+                snprintf(s_sd_notice,sizeof(s_sd_notice),"存储卡忙，请稍后重试");
             } else {
                 snprintf(s_sd_notice, sizeof(s_sd_notice), "格式化失败：%s", esp_err_to_name(err));
             }
@@ -1402,7 +1595,7 @@ static app_redraw_t on_key(app_ctx_t *ctx, int key) {
         if (s_folder == 3 && strcmp(s_dir, "/sdcard")) {
             char *slash = strrchr(s_dir, '/'); if (slash) *slash = 0;
             scan_folder(3);
-        } else s_folder = -1;
+        } else { file_search_stop(); s_folder = -1; }
         return APP_REDRAW_PAGE;
     }
     ui_nav_request(ctx, 0);
@@ -1421,6 +1614,9 @@ static bool files_back_swipe_area(app_ctx_t *ctx,const ui_gesture_event_t *event
     return (s_view!=FILE_VIEW_RENAME&&s_view!=FILE_VIEW_SEARCH) || event->y0<UI_SYSTEM_KEYBOARD_TOP;
 }
 static void files_before_lock(app_ctx_t *ctx) {
+#ifdef ESP_PLATFORM
+    if(dir_started || dir_requested) s_scan_pending=true;
+#endif
     file_book_count_invalidate();
     if(s_file_search){file_search_stop();s_scan_pending=true;}
     (void)ctx;s_pager_pressed=UI_PAGER_NONE;s_pager_paint_pending=false;
