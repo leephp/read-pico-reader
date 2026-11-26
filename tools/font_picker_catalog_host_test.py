@@ -117,7 +117,7 @@ unit += 'static app_redraw_t system_tap(int x,int y){ui_gesture_event_t e={UI_GE
 unit += 'static app_redraw_t system_page(int action){EpdRect q=ui_pager_rect_at(action,956);return system_tap(q.x+q.width/2,q.y+q.height/2);}'+'\n'
 for name in ('BOOK_FONT_PAGE', 'BOOK_FONT_PAGER_TOP'):
     unit += re.search(r'^#define ' + name + r' .*$', r, re.M)[0] + '\n'
-for name in ('reader_font_pages', 'reader_font_turn', 'reader_font_picker_top', 'reader_font_pick_rect', 'draw_font_picker'):
+for name in ('reader_font_pages', 'reader_font_turn', 'reader_font_pager_hit', 'reader_font_picker_top', 'reader_font_pick_rect', 'draw_font_picker'):
     unit += function(name, reader) + '\n'
 unit += 'static app_redraw_t reader_tap(int x,int y){app_ctx_t c={0};app_ctx_t*ctx=&c;' + reader_choose + 'return APP_REDRAW_NONE;}\n'
 unit += 'static app_redraw_t reader_swipe(int type){struct{int type;}e={type};const typeof(e)*ev=&e;' + reader_swipe + 'return APP_REDRAW_NONE;}\n'
@@ -141,7 +141,7 @@ int main(void){
    pager_top=-1;rows=previews=restores=0;draw_font_picker(NULL);assert(rows==previews&&restores==1);
    assert(pager_top==(count>BOOK_FONT_PAGE?BOOK_FONT_PAGER_TOP:-1));
    for(int i=0;i<rows;++i){EpdRect q=boxes[i];selected=-1;
-    assert(q.y+q.height<=BOOK_FONT_PAGER_TOP);
+    assert(q.y+q.height<=BOOK_FONT_PAGER_TOP-16);
     assert(reader_tap(q.x+q.width/2,q.y+q.height/2)==APP_REDRAW_PAGE);
     assert(selected==s_font_page*BOOK_FONT_PAGE+i);++visited;}
      selected=-1;
@@ -154,6 +154,18 @@ int main(void){
   assert(reader_swipe(UI_GESTURE_SWIPE_U)==APP_REDRAW_NONE&&s_font_page==last);
   while(reader_swipe(UI_GESTURE_SWIPE_D)!=APP_REDRAW_NONE){}assert(s_font_page==0);
  }
+ const int xs[]={0,111,112,255,256,427,428,571,572,683};
+ const int actions[]={UI_PAGER_FIRST,UI_PAGER_FIRST,UI_PAGER_PREVIOUS,UI_PAGER_PREVIOUS,UI_PAGER_NONE,
+                      UI_PAGER_NONE,UI_PAGER_NEXT,UI_PAGER_NEXT,UI_PAGER_LAST,UI_PAGER_LAST};
+ for(unsigned i=0;i<sizeof(xs)/sizeof(xs[0]);++i){
+  for(int y=1134;y<=1215;y+=81){
+   selected=-1;s_font_page=2;
+   reader_tap(xs[i],y);
+   assert(selected==-1&&s_font_page==ui_pager_target(actions[i],2,reader_font_pages(count)));
+  }
+  assert(reader_font_pager_hit(xs[i],1133)==UI_PAGER_NONE);
+ }
+ s_font_page=0;
  EpdRect next=ui_pager_rect_at(UI_PAGER_NEXT,BOOK_FONT_PAGER_TOP);
  assert(reader_swipe(UI_GESTURE_SWIPE_U)==APP_REDRAW_PAGE&&s_font_page==1);
  for(int action=UI_PAGER_LAST;action>=UI_PAGER_FIRST;--action){

@@ -3256,6 +3256,15 @@ static app_redraw_t reader_font_turn(int action) {
     s_font_page = next;
     return APP_REDRAW_PAGE;
 }
+// 卡片下方的空白也接受翻页，中央页码不触发操作。/ Extend taps below the cards, leaving the page label inactive.
+static int reader_font_pager_hit(int x, int y) {
+    if (y < BOOK_FONT_PAGER_TOP - 16 || y >= 1216 || x < 0 || x >= 684) return UI_PAGER_NONE;
+    if (x < 112) return UI_PAGER_FIRST;
+    if (x < 256) return UI_PAGER_PREVIOUS;
+    if (x < 428) return UI_PAGER_NONE;
+    if (x < 572) return UI_PAGER_NEXT;
+    return UI_PAGER_LAST;
+}
 static int reader_font_picker_top(void) { return app_settings_system_font_size()>=150?270:584; }
 static EpdRect reader_font_pick_rect(int slot) {
     bool large=app_settings_system_font_size()>=150;
@@ -7462,7 +7471,7 @@ static app_redraw_t reader_panel_action(app_ctx_t* ctx, uint16_t x, uint16_t y) 
             s_reader_panel = READER_PANEL_FONT_SETTINGS;
             return APP_REDRAW_PAGE;
         }
-        int action = ui_pager_hit_at(x, y, BOOK_FONT_PAGER_TOP);
+        int action = reader_font_pager_hit(x, y);
         if (action != UI_PAGER_NONE) return reader_font_turn(action);
         int count = ttf_font_count(), start = s_font_page * BOOK_FONT_PAGE;
         for (int slot = 0; slot < BOOK_FONT_PAGE && start + slot < count; ++slot) {
