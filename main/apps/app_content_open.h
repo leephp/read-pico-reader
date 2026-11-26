@@ -19,6 +19,8 @@ bool app_book_request_resume(const char *path, bool fullscreen);
 bool app_book_resume_context(char *path, size_t capacity, bool *fullscreen);
 bool app_image_request_open(const char *path);
 void app_files_request_folder(int folder);
+void app_files_request_shelf_picker(void);
+bool app_book_select_directory(const char *path);
 void app_book_request_manage(void);
 void app_book_return_from_cover_wifi(bool connected);
 /// 共用设置中的书架样式页，返回保留管理上下文。/ Reuse the settings chooser and retain the originating management context.

@@ -15,6 +15,7 @@ reader = ROOT / 'main/apps/app_book.c'
 home = ROOT / 'main/apps/app_dashboard.c'
 unit = r'''
 #include <assert.h>
+static char s_shelf_directory[288];
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>

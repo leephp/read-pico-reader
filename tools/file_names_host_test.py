@@ -8,6 +8,7 @@ root=Path(__file__).resolve().parents[1]
 s=root/'main/apps/app_files.c'
 unit=r'''
 #include <assert.h>
+static char s_shelf_directory[288];
 #include <stdbool.h>
 #include <stddef.h>
 bool book_weread_cover_metadata(const char *path, char *title, size_t title_cap,

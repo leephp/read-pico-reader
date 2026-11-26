@@ -98,6 +98,7 @@ static int s_pager_pressed=UI_PAGER_NONE;
 static bool s_pager_paint_pending;
 static int64_t s_space_poll_ms;
 static char s_message[96];
+static bool s_shelf_picker;
 static char s_dir[288] = "/sdcard";
 static read_pico_sd_info_t s_sd;
 // 卡在、挂不上、又不是超时，多半是文件系统本机不认（exFAT 之类）。这种卡仍然格得动，
@@ -558,6 +559,8 @@ static void render_file_sort(uint8_t *fb) {
     ui_text_vc(fb,342,802,19,"文件夹始终优先",EPD_DRAW_ALIGN_CENTER,false);
     ui_draw_button(fb,file_sort_rect(5),"完成",true);
 }
+void app_files_request_shelf_picker(void) { s_requested_folder=3; }
+
 void app_files_request_folder(int folder) {
     if (folder >= 0 && folder < 3) s_requested_folder = folder;
 }
@@ -1059,8 +1062,11 @@ static void render_content(app_ctx_t *ctx, uint8_t *fb) {
         ui_nav_back(fb,36,79);
         const char *title=s_folder==3?(!strcmp(s_dir,"/sdcard")?"TF 卡根目录":strrchr(s_dir,'/')+1):names[s_folder];
         if(!strcmp(title,"fonts"))title="Fonts";
-        ui_text_box(fb,(EpdRect){112,79,s_view==FILE_VIEW_MOVE?450:456,66},34,s_view==FILE_VIEW_MOVE?"选择目标文件夹":title,EPD_DRAW_ALIGN_CENTER,false);
+        ui_text_box(fb,(EpdRect){112,79,s_view==FILE_VIEW_MOVE?450:456,66},34,s_shelf_picker?"选择书架目录":s_view==FILE_VIEW_MOVE?"选择目标文件夹":title,EPD_DRAW_ALIGN_CENTER,false);
         char count[64];snprintf(count,sizeof(count),s_file_selecting?"已选 %u 项":"共 %u 项",s_file_selecting?file_selected_count():(unsigned)file_visible_count());
+        if(s_shelf_picker){
+            copy_utf8(count,sizeof(count),s_dir[7]?s_dir+7:"/");fit_name(count,21,370);
+        }
         ui_text_box(fb,(EpdRect){36,s_view==FILE_VIEW_MOVE?171:244,370,s_view==FILE_VIEW_MOVE?38:46},21,count,EPD_DRAW_ALIGN_LEFT,false);
         int top=s_view==FILE_VIEW_MOVE?214:UI_FILES_LIST_TOP;
         ui_hairline(fb,top,36,612,0xdc);
@@ -1088,7 +1094,7 @@ static void render_content(app_ctx_t *ctx, uint8_t *fb) {
         }
         if(!file_visible_count())ui_text_box(fb,(EpdRect){52,450,580,100},26,s_message[0]?s_message:"此目录还没有文件",EPD_DRAW_ALIGN_CENTER,false);
         if(s_view==FILE_VIEW_MOVE){
-            file_management_button(fb,file_action_rect(0),"取消移动",false);file_management_button(fb,file_action_rect(1),"移动到此处",false);
+            file_management_button(fb,file_action_rect(0),s_shelf_picker?"取消":"取消移动",false);file_management_button(fb,file_action_rect(1),s_shelf_picker?"使用此目录":"移动到此处",false);
             if(s_message[0])ui_text_box(fb,(EpdRect){36,960,612,32},20,s_message,EPD_DRAW_ALIGN_CENTER,false);
         }
     } else {
@@ -1147,7 +1153,8 @@ static void on_enter(app_ctx_t *ctx) {
     (void)ctx;
     s_pager_pressed=UI_PAGER_NONE;s_pager_paint_pending=false;
     s_folder = s_requested_folder; s_requested_folder = -1;
-    s_view = FILE_VIEW_LIST;
+    s_shelf_picker=s_folder==3;
+    s_view = s_shelf_picker?FILE_VIEW_MOVE:FILE_VIEW_LIST;
     s_delete_confirm = false;
     snprintf(s_dir, sizeof(s_dir), "/sdcard");
     s_page = 0; s_scan_pending = true;
@@ -1160,6 +1167,7 @@ static void on_enter(app_ctx_t *ctx) {
 
 }
 static void on_media_lost(app_ctx_t *ctx) {
+    if(s_shelf_picker) ui_nav_request(ctx,1);
     file_search_stop();s_file_query[0]=s_search_root[0]=0;
     s_batch_running=false;
     s_pager_pressed=UI_PAGER_NONE;s_pager_paint_pending=false;
@@ -1469,10 +1477,23 @@ static app_redraw_t on_gesture(app_ctx_t *ctx, const ui_gesture_event_t *ev) {
             if (strcmp(s_dir, "/sdcard")) {
                 char *slash = strrchr(s_dir, '/'); if (slash) *slash = 0;
                 scan_folder(3);
-            } else leave_move(false);
+            } else if(s_shelf_picker) ui_nav_request(ctx,1);
+            else leave_move(false);
             return APP_REDRAW_PAGE;
         }
         if (ui_rect_hit(file_action_rect(0),ev->x0,ev->y0) || ui_rect_hit(file_action_rect(1),ev->x0,ev->y0)) {
+            if(s_shelf_picker){
+                if(ev->x0>=342){
+                    struct stat st;
+                    if(s_scan_pending || stat(s_dir,&st) || !S_ISDIR(st.st_mode)){
+                        snprintf(s_message,sizeof(s_message),"目录暂不可用");return APP_REDRAW_PAGE;
+                    }
+                    if(!app_book_select_directory(s_dir)){
+                        snprintf(s_message,sizeof(s_message),"目录设置保存失败");return APP_REDRAW_PAGE;
+                    }
+                }
+                ui_nav_request(ctx,1);return APP_REDRAW_NONE;
+            }
             if (ev->x0 < 342) leave_move(false);
             else if(s_batch_count&&s_batch_move){(void)file_batch_begin(true);return APP_REDRAW_PAGE;}
             else return move_selected();
@@ -1584,6 +1605,7 @@ static app_redraw_t on_key(app_ctx_t *ctx, int key) {
     if(s_file_selecting&&s_view==FILE_VIEW_LIST){s_file_selecting=false;s_batch_count=0;for(int i=0;i<s_count;++i)s_files[i].selected=false;return APP_REDRAW_FULL;}
 
     s_sd_format_confirm=false;
+    if(s_shelf_picker){ui_nav_request(ctx,1);return APP_REDRAW_NONE;}
     if (s_view == FILE_VIEW_MOVE) { leave_move(false); return APP_REDRAW_PAGE; }
     if (key == 1) { ui_nav_request(ctx, 0); return APP_REDRAW_NONE; }
     if (s_view == FILE_VIEW_RENAME || s_view == FILE_VIEW_SEARCH) { ui_keyboard_end(); s_view = FILE_VIEW_ACTIONS; return APP_REDRAW_PAGE; }

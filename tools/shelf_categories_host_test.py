@@ -19,6 +19,7 @@ def function(name):
   i+=1
  return s[m.start():i]
 unit=r'''
+static char s_shelf_directory[288];
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -51,10 +52,11 @@ static int s_view=SHELF;
 static bool s_scan_pending,s_shelf_cache_valid,s_recent_sort;
 static int s_count,s_visible_count,s_filter;
 static unsigned s_shelf_order;
-typedef struct{char path[288],name[256];bool removed,search_match,is_flash,favorite;uint32_t recent;uint64_t added;}shelf_entry_t;
+static bool shelf_waiting_for_index(void){return s_scan_pending;}
+typedef struct{char path[288],name[256];bool removed,search_match,is_flash,favorite,has_progress;unsigned pct;uint32_t recent;uint64_t added;}shelf_entry_t;
 static shelf_entry_t s_shelf[40];
 '''
-for name in ('shelf_category_add','shelf_category_init','shelf_category_name','shelf_category_matches','shelf_category_remember','shelf_category_restore','shelf_categories_recount','shelf_matches','compare_books','sort_shelf'):
+for name in ('shelf_order_mode','shelf_order_desc','shelf_category_add','shelf_category_init','shelf_category_name','shelf_category_matches','shelf_category_remember','shelf_category_restore','shelf_categories_recount','shelf_matches','compare_books','sort_shelf'):
  unit+=function(name)+'\n'
 unit+=r'''
 int main(void){
@@ -65,6 +67,13 @@ int main(void){
  assert(!book_shelf_child("/sdcard/books","/sdcard/book",child,sizeof(child)));
  assert(!book_shelf_child("/sdcard/books","/sdcard/books/文学/a.epub",child,3));
  assert(book_shelf_saved_page(100,10,9)==1&&book_shelf_saved_page(-1,10,9)==0&&book_shelf_saved_page(2,0,9)==0);
+ strcpy(s_shelf_directory,"/sdcard/文学");
+ assert(shelf_category_matches("/sdcard/文学/书.epub"));
+ assert(!shelf_category_matches("/sdcard/文学/子目录/书.epub"));
+ assert(!shelf_category_matches("/sdcard/文学史/书.epub"));
+ strcpy(s_shelf_directory,"/sdcard");
+ assert(shelf_category_matches("/sdcard/a.txt")&&!shelf_category_matches("/sdcard/books/a.txt"));
+ s_shelf_directory[0]=0;
  fail_alloc=true;shelf_category_init();assert(!s_categories&&shelf_category_matches("anything"));fail_alloc=false;shelf_category_init();assert(s_category_count==2);
  int literature=shelf_category_add("/sdcard/books/文学");int empty=shelf_category_add("/sdcard/books/空目录");assert(literature==2&&empty==3);
  assert(shelf_category_add("/sdcard/books/文学")==literature);

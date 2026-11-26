@@ -178,6 +178,7 @@
 #include "boot_state.h"
 #include "app_registry.h"
 extern const app_desc_t app_device_settings;
+extern const app_desc_t app_files;
 #include "ble_page_turner.h"
 #include "book_layout.h"
 #include "book_cover.h"
@@ -367,6 +368,8 @@ typedef struct { char path[BOOK_STORE_PATH_MAX]; int pages[2], count; bool avail
 static shelf_category_t *s_categories;
 static int s_category_count, s_category_capacity, s_category_selected, s_category_menu_page;
 static bool s_category_menu;
+static char s_shelf_directory[BOOK_STORE_PATH_MAX];
+#define SHELF_PICK_DIRECTORY SHELF_CATEGORY_LIMIT
 static char s_category_root[BOOK_STORE_PATH_MAX];
 static void shelf_category_init(void);
 static void shelf_category_remember(app_ctx_t *ctx);
@@ -4519,6 +4522,14 @@ static void render(app_ctx_t* ctx, uint8_t* fb) {
     ui_nav_status(fb);
     char category_title[BOOK_STORE_PATH_MAX];
     copy_text(category_title,sizeof(category_title),s_category_selected ? shelf_category_name(s_category_selected) : "书架");
+    if (*s_shelf_directory) {
+        const char *name=strrchr(s_shelf_directory,'/')+1;
+        copy_text(category_title,sizeof(category_title),!strcmp(s_shelf_directory,"/sdcard")?"TF 卡":name);
+        char path[BOOK_STORE_PATH_MAX];
+        copy_text(path,sizeof(path),s_shelf_directory[7]?s_shelf_directory+7:"/");
+        fit_text(path,19,580);
+        ui_text(fb,36,153,19,path,EPD_DRAW_ALIGN_LEFT,false);
+    }
     fit_text(category_title,52,244);
     ui_text(fb, 36, 90, 52, category_title, EPD_DRAW_ALIGN_LEFT, false);
     int title_width=ui_text_fixed_width_px(ui_text_effective_px(52),category_title);
@@ -5458,6 +5469,34 @@ static int shelf_category_add(const char *path) {
     s_categories[index].available=true;
     return index;
 }
+bool app_book_select_directory(const char *path) {
+    if (!path || strlen(path)>=sizeof(s_shelf_directory) ||
+        (*path && strcmp(path,"/sdcard") && strncmp(path,"/sdcard/",8))) return false;
+    nvs_handle_t h;
+    if (nvs_open("rp_shelf_view",NVS_READWRITE,&h)!=ESP_OK) return false;
+    esp_err_t err=nvs_set_str(h,"directory",path);
+    if (err==ESP_OK) err=nvs_commit(h);
+    nvs_close(h);
+    if (err!=ESP_OK) return false;
+    copy_text(s_shelf_directory,sizeof(s_shelf_directory),path);
+    s_category_selected=0;
+    s_count=s_visible_count=0;
+    s_scan_pending=true;
+    app_book_shelf_prefetch_reset();
+    return true;
+}
+static void restore_shelf_directory(void) {
+    static bool loaded;
+    if (loaded) return;
+    loaded=true;
+    nvs_handle_t h;
+    if (nvs_open("rp_shelf_view",NVS_READONLY,&h)!=ESP_OK) return;
+    size_t size=sizeof(s_shelf_directory);
+    if (nvs_get_str(h,"directory",s_shelf_directory,&size)!=ESP_OK ||
+        (strcmp(s_shelf_directory,"/sdcard") && strncmp(s_shelf_directory,"/sdcard/",8)))
+        s_shelf_directory[0]=0;
+    nvs_close(h);
+}
 static void shelf_category_init(void) {
     const char *root=app_settings_books_dir();
     if (strcmp(s_category_root,root)) {
@@ -5479,6 +5518,11 @@ static const char *shelf_category_name(int index) {
     return slash ? slash+1 : s_categories[index].path;
 }
 static bool shelf_category_matches(const char *path) {
+    if (*s_shelf_directory) {
+        const char *slash=strrchr(path,'/');
+        return slash && (size_t)(slash-path)==strlen(s_shelf_directory) &&
+               !strncmp(path,s_shelf_directory,(size_t)(slash-path));
+    }
     if (!s_category_selected || !s_categories) return true;
     if (s_category_selected==1) {
         char child[BOOK_STORE_PATH_MAX];
@@ -5516,13 +5560,17 @@ static void shelf_categories_recount(void) {
         s_category_selected=0;
 }
 static int shelf_category_at(int ordinal) {
+    if (*s_shelf_directory) return ordinal==0 ? 0 : ordinal==1 ? SHELF_PICK_DIRECTORY : -1;
+    if (ordinal==2) return SHELF_PICK_DIRECTORY;
+    if (ordinal>2) --ordinal;
     for (int i=0;i<s_category_count;++i) {
         if (s_categories[i].available && ordinal--==0) return i;
     }
     return -1;
 }
 static int shelf_category_available(void) {
-    int count=0;
+    if (*s_shelf_directory) return 2;
+    int count=1;
     for (int i=0;i<s_category_count;++i) if (s_categories[i].available) ++count;
     return count;
 }
@@ -5540,11 +5588,17 @@ static void draw_category_menu(uint8_t *fb) {
         int index=shelf_category_at(s_category_menu_page*SHELF_CATEGORY_ROWS+row);
         if (index<0) break;
         int y=box.y+8+row*83;
-        bool selected=index==s_category_selected;
+        bool selected=index==s_category_selected && !*s_shelf_directory;
         if (selected) ui_fill_round_rect(fb,(EpdRect){box.x+8,y,box.width-16,79},16,0xd0);
         ui_draw_icon(fb,box.x+35,y+40,27,index<2 ? UI_ICON_LIBRARY_BIG : UI_ICON_FOLDER_OPEN,UI_GRAY_BLACK);
         char name[BOOK_STORE_PATH_MAX],count[24];
-        snprintf(count,sizeof(count),"%d",s_categories[index].count);
+        if (index==SHELF_PICK_DIRECTORY) {
+            ui_text_vc(fb,box.x+62,y+40,28,"选择目录",EPD_DRAW_ALIGN_LEFT,false);
+            ui_draw_icon(fb,box.x+box.width-35,y+40,24,UI_ICON_CHEVRON_RIGHT,UI_GRAY_BLACK);
+            continue;
+        }
+        if (*s_shelf_directory) count[0]=0;
+        else snprintf(count,sizeof(count),"%d",s_categories[index].count);
         int name_width=290-ui_text_fixed_width_px(ui_text_effective_px(22),count);
         if (name_width>228) name_width=228;
         if (name_width<60) name_width=60;
@@ -5614,7 +5668,7 @@ static app_redraw_t shelf_category_gesture(app_ctx_t *ctx, const ui_gesture_even
         s_category_menu=true; s_category_menu_page=0;
         int ordinal=0;
         for (int i=0;i<s_category_selected;++i) if (s_categories[i].available) ++ordinal;
-        s_category_menu_page=ordinal/SHELF_CATEGORY_ROWS;
+        s_category_menu_page=(ordinal+(ordinal>=2))/SHELF_CATEGORY_ROWS;
     } else {
         int pages=(shelf_category_available()+SHELF_CATEGORY_ROWS-1)/SHELF_CATEGORY_ROWS;
         int direction=ev->type==UI_GESTURE_SWIPE_U ? 1 : ev->type==UI_GESTURE_SWIPE_D ? -1 : 0;
@@ -5625,6 +5679,18 @@ static app_redraw_t shelf_category_gesture(app_ctx_t *ctx, const ui_gesture_even
             else {
                 int index=ev->y0>=previous.y+8 && row<SHELF_CATEGORY_ROWS
                     ? shelf_category_at(s_category_menu_page*SHELF_CATEGORY_ROWS+row) : -1;
+                if (index==SHELF_PICK_DIRECTORY) {
+                    s_category_menu=false;
+                    app_files_request_shelf_picker();
+                    ctx->request_app=&app_files;
+                    return APP_REDRAW_NONE;
+                }
+                if (index==0 && *s_shelf_directory) {
+                    s_category_menu=false;
+                    if (!app_book_select_directory("")) copy_text(s_message,sizeof(s_message),"目录设置保存失败");
+                    else { clear_selection(); ctx->leaf=0; }
+                    return APP_REDRAW_PAGE;
+                }
                 if (index>=0) {
                     shelf_category_remember(ctx); s_category_selected=index;
                     s_category_menu=false; clear_selection(); sort_shelf(ctx); shelf_category_restore(ctx);
@@ -5730,6 +5796,7 @@ static void scan_shelf_dir(app_ctx_t *ctx, const char *root, bool is_flash, nvs_
         struct stat st;
         if (stat(path, &st) != 0) { *unreadable = true; continue; }
         if (S_ISDIR(st.st_mode)) {
+            if (*s_shelf_directory) continue;
             if (!is_flash && depth==0 && !strcmp(root,app_settings_books_dir())) shelf_category_add(path);
             if (depth == BOOK_SCAN_DEPTH_LIMIT) { *skipped = true; continue; }
             DIR *child = opendir(path);
@@ -5850,6 +5917,7 @@ static bool shelf_backfill_visit(const char* path, const book_progress_t* progre
 // writes progress and never bumps the store revision, so the cached path has to call this too
 // or a freshly read book stays invisible until a manual rescan.
 static bool shelf_backfill_read_books(bool* truncated) {
+    if (*s_shelf_directory) return false;
     nvs_handle_t favorites = 0;
     nvs_handle_t hidden = 0;
     (void)nvs_open("rp_favs", NVS_READONLY, &favorites);
@@ -5928,6 +5996,7 @@ static uint32_t shelf_cache_hash(const void* data, size_t size) {
     return hash;
 }
 static void shelf_cache_save(void) {
+    if (*s_shelf_directory) return;
     if (!s_count || s_count > SHELF_CACHE_MAX_ENTRIES) return;
     if (mkdir(SHELF_CACHE_DIR, 0777) && errno != EEXIST) return;
     char temp[64];
@@ -5964,6 +6033,7 @@ static void shelf_cache_save(void) {
     if (rename(temp, SHELF_CACHE_PATH) != 0) remove(temp);
 }
 static bool shelf_cache_load(app_ctx_t* ctx, bool background) {
+    if (*s_shelf_directory) return false;
     FILE* file = fopen(SHELF_CACHE_PATH, "rb");
     if (!file) return false;
     shelf_cache_header_t header;
@@ -6054,6 +6124,7 @@ void app_book_shelf_prefetch_reset(void) {
     cover_ram_cache_clear();
 }
 void app_book_shelf_prefetch_first(app_ctx_t *ctx) {
+    restore_shelf_directory();
     if (ctx->now_ms < s_first_page_warm.next_ms || pico_boot_recovery() || app_touch_input_pending(ctx)) return;
     if (s_first_page_warm.generation) {
         for (int row = 0; row < BOOK_GRID_ROWS; ++row) {
@@ -6166,13 +6237,15 @@ static void scan_shelf(app_ctx_t* ctx) {
     // Flash mounts on each boot; existing files are not formatted by that mount.
     book_store_root_t roots[BOOK_STORE_ROOT_MAX];
     int n = 0;
-    esp_err_t root_err = book_store_roots(roots, &n);
-    bool truncated = false, unreadable = root_err != ESP_OK || book_store_roots_degraded(), skipped = false;
+    esp_err_t root_err = *s_shelf_directory ? ESP_OK : book_store_roots(roots, &n);
+    bool truncated = false, unreadable = root_err != ESP_OK || (!*s_shelf_directory && book_store_roots_degraded()), skipped = false;
     nvs_handle_t favorites = 0;
     nvs_handle_t hidden = 0;
     (void)nvs_open("rp_favs", NVS_READONLY, &favorites);
     (void)nvs_open(SHELF_HIDDEN_NS, NVS_READONLY, &hidden);
     s_storage[0] = 0;
+    if (*s_shelf_directory)
+        scan_shelf_dir(ctx,s_shelf_directory,false,favorites,hidden,&truncated,&unreadable,&skipped);
     for (int i = 0; i < n; ++i) {
         if (i == 0 || roots[i].is_flash || roots[i - 1].is_flash) {
             char capacity[64];
@@ -6267,12 +6340,12 @@ static void scan_shelf(app_ctx_t* ctx) {
             }
         }
     }
-    if (!n) copy_text(s_storage, sizeof(s_storage), "存储不可用，请检查 TF 卡");
+    if (!n && !*s_shelf_directory) copy_text(s_storage, sizeof(s_storage), "存储不可用，请检查 TF 卡");
     if (truncated) snprintf(s_shelf_warning, sizeof(s_shelf_warning), "内存不足，仅列 %d 本；释放后重扫", s_count);
     else if (unreadable) copy_text(s_shelf_warning, sizeof(s_shelf_warning), "部分目录或文件不可读，请检查后重扫");
     else if (skipped) copy_text(s_shelf_warning, sizeof(s_shelf_warning), "部分文件过大或名称过长，未列入");
     else if (s_pending_invalidated) copy_text(s_shelf_warning, sizeof(s_shelf_warning), "图书已更新，旧待保存进度已作废");
-    if (!s_count && !unreadable && !truncated) copy_text(s_message, sizeof(s_message), "暂无图书，请传入 TXT 或 EPUB");
+    if (!s_count && !unreadable && !truncated) copy_text(s_message, sizeof(s_message), *s_shelf_directory ? "此目录暂无书籍" : "暂无图书，请传入 TXT 或 EPUB");
     read_pico_sd_info_t cache_sd = {0};
     read_pico_sd_get_info(&cache_sd);
     s_cache_sd_present = cache_sd.present;
@@ -7908,7 +7981,6 @@ static app_redraw_t action_at(app_ctx_t* ctx, uint16_t x, uint16_t y) {
         if (tab >= 0) { ui_nav_request(ctx, tab); return APP_REDRAW_NONE; }
         for (int i = 0; i < 5; ++i) if (ui_rect_hit(import_rect(i), x, y)) {
             if (i == 0) {
-                extern const app_desc_t app_files;
                 ctx->request_app = &app_files;
             } else if (i == 4) {
                 extern const app_desc_t app_cloud_sync;
@@ -8109,6 +8181,7 @@ static app_redraw_t action_at(app_ctx_t* ctx, uint16_t x, uint16_t y) {
 #pragma GCC pop_options
 #endif
 static void on_enter(app_ctx_t* ctx) {
+    restore_shelf_directory();
     if (cover_lookup_resume()) return;
     if(s_manage_style_restore){
         s_manage_style_restore=false;read_pico_sd_info_t sd={0};

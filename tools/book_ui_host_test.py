@@ -42,6 +42,8 @@ unit = r'''
 typedef enum { UI_GESTURE_SWIPE_L, UI_GESTURE_SWIPE_R, UI_GESTURE_SWIPE_U, UI_GESTURE_SWIPE_D, UI_GESTURE_TAP, UI_GESTURE_CANCEL } ui_gesture_type_t;
 typedef struct{ui_gesture_type_t type;unsigned short x0,y0,x,y;}ui_gesture_event_t;
 #include <assert.h>
+static char s_shelf_directory[288];
+static void restore_shelf_directory(void){}
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -729,6 +731,17 @@ int main(void) {
     assert(mkdir(outside_dir,0700)==0);
     snprintf(outside,sizeof(outside),"%s/读过.epub",outside_dir);
     snprintf(changed,sizeof(changed),"%s/changed.txt",outside_dir);
+    strcpy(s_shelf_directory,outside_dir);s_count=s_visible_count=0;scan_shelf(&ctx);
+    assert(s_count==0&&s_visible_count==0);
+    strcpy(s_shelf_directory,test_roots[0].path);
+    assert(mkdir(nested,0700)==0);FILE *inner=fopen(nested_book,"w");assert(inner);fclose(inner);
+    scan_shelf(&ctx);assert(s_count==65&&s_visible_count==65);
+    strcpy(s_shelf_directory,nested);s_count=s_visible_count=0;scan_shelf(&ctx);
+    assert(s_count==1&&s_visible_count==1&&!strcmp(s_shelf[0].path,nested_book));
+    s_shelf_directory[0]=0;s_count=s_visible_count=0;scan_shelf(&ctx);
+    assert(s_count==66&&s_visible_count==66);
+    assert(unlink(nested_book)==0&&rmdir(nested)==0);scan_shelf(&ctx);
+    puts("PASS: scoped real-directory scan, empty result, direct children only and full shelf restore");
     FILE* outside_file=fopen(outside,"w");assert(outside_file);fputs("x",outside_file);fclose(outside_file);
     outside_file=fopen(changed,"w");assert(outside_file);fputs("xx",outside_file);fclose(outside_file);
     test_progress_count=4;
