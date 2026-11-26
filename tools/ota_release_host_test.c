@@ -4,13 +4,16 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-static const char *valid = "{\"schema\":1,\"version\":\"0.3.3-rc79\",\"project\":\"" PICO_OTA_PROJECT "\",\"board\":\"" PICO_OTA_BOARD "\",\"layout\":\"" PICO_OTA_LAYOUT "\",\"minimum_base_version\":\"0.3.3-rc72\",\"url\":\"https://wegooo-cell.github.io/read-pico-reader/Pico-update-0.3.3-rc79.bin\",\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"notes\":\"Test release\",\"size\":4096}";
+static const char *valid = "{\"schema\":1,\"version\":\"0.3.3-rc79\",\"project\":\"" PICO_OTA_PROJECT "\",\"board\":\"" PICO_OTA_BOARD "\",\"layout\":\"" PICO_OTA_LAYOUT "\",\"minimum_base_version\":\"0.3.3-rc72\",\"url\":\"https://read-pico-reader.mostion.com/reader/Pico-update-0.3.3-rc79.bin\",\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"notes\":\"Test release\",\"size\":4096}";
 int main(void) {
  pico_release_t release;
  assert(pico_release_parse(valid,strlen(valid),&release)==ESP_OK);
  assert(release.size==4096 && !strcmp(release.version,"0.3.3-rc79"));
  assert(pico_version_compare("0.3.3-rc79","0.3.3-rc9")>0);
  assert(pico_version_compare("0.3.3","0.3.3-rc79")>0);
+ assert(pico_version_compare("0.3.3-rc109-qdsx-v0.1.14","0.3.3-rc109-qdsx-v0.1.13")>0);
+ assert(pico_version_compare("0.3.3-rc109-qdsx-v0.1.9","0.3.3-rc109-qdsx-v0.1.14")<0);
+ assert(pico_version_compare("0.3.3-rc109-qdsx-v0.1.14","0.3.3-rc109")>0);
  assert(pico_version_compare("0.4.0-rc1","0.3.3")>0);
  assert(pico_release_url_valid("https://kiikoread.com/Pico-update-0.3.3-rc90.bin"));
  assert(!pico_release_url_valid("https://kiikoread.com.evil/a.bin"));

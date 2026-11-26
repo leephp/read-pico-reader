@@ -11,31 +11,45 @@
 #include <string.h>
 
 // 只接收正式版本号，拒绝截断、溢出和未知后缀。/ Accept bounded release versions without truncation or unknown suffixes.
-static bool version_parts(const char *s, unsigned parts[4]) {
-    if (!s || !*s || strlen(s) > 32) return false;
-    memset(parts, 0, 4 * sizeof(*parts));
+enum { VERSION_FIELDS = 8 };
+
+static bool version_number(const char **cursor, unsigned *value) {
+    if (!isdigit((unsigned char)**cursor)) return false;
+    char *end;
+    unsigned long number = strtoul(*cursor, &end, 10);
+    if (number > 65535) return false;
+    *value = (unsigned)number;
+    *cursor = end;
+    return true;
+}
+
+static bool version_triplet(const char **cursor, unsigned *parts) {
     for (unsigned i = 0; i < 3; ++i) {
-        if (!isdigit((unsigned char)*s)) return false;
-        char *end; unsigned long n = strtoul(s, &end, 10);
-        if (n > 65535) return false;
-        parts[i] = (unsigned)n; s = end;
-        if (i < 2 && *s++ != '.') return false;
+        if (i && *(*cursor)++ != '.') return false;
+        if (!version_number(cursor, &parts[i])) return false;
     }
-    // 正式版排在该版本所有 rc 之后。/ A stable release sorts after its release candidates.
-    parts[3] = 65536;
+    return true;
+}
+
+static bool version_parts(const char *s, unsigned parts[VERSION_FIELDS]) {
+    if (!s || strlen(s) > 32) return false;
+    memset(parts, 0, VERSION_FIELDS * sizeof(*parts));
+    if (!version_triplet(&s, parts)) return false;
+    parts[3] = 65536; // Stable releases sort after all RCs of the same base.
     if (!*s) return true;
     if (strncmp(s, "-rc", 3)) return false;
     s += 3;
-    if (!isdigit((unsigned char)*s)) return false;
-    char *end; unsigned long n = strtoul(s, &end, 10);
-    if (*end || n > 65535) return false;
-    parts[3] = (unsigned)n;
-    return true;
+    if (!version_number(&s, &parts[3])) return false;
+    if (!*s) return true;
+    if (strncmp(s, "-qdsx-v", 7)) return false;
+    s += 7;
+    parts[4] = 1;
+    return version_triplet(&s, parts + 5) && !*s;
 }
 int pico_version_compare(const char *a, const char *b) {
-    unsigned left[4], right[4];
+    unsigned left[VERSION_FIELDS], right[VERSION_FIELDS];
     if (!version_parts(a, left) || !version_parts(b, right)) return 0;
-    for (unsigned i = 0; i < 4; ++i) {
+    for (unsigned i = 0; i < VERSION_FIELDS; ++i) {
         if (left[i] < right[i]) return -1;
         if (left[i] > right[i]) return 1;
     }
@@ -45,7 +59,7 @@ bool pico_release_url_valid(const char *url) {
     // 升级源限定官方 HTTPS 站点，避免重定向泄漏或被替换为任意下载源。
     // Limit updates to the official HTTPS origin; do not follow arbitrary redirects.
     static const char *const prefixes[] = {
-        "https://kiikoread.com/", "https://wegooo-cell.github.io/read-pico-reader/"
+        "https://read-pico-reader.mostion.com/reader/", "https://kiikoread.com/", "https://wegooo-cell.github.io/read-pico-reader/"
     };
     if (!url || strlen(url) >= 256) return false;
     const char *name = NULL;
@@ -81,7 +95,7 @@ esp_err_t pico_release_parse(const char *json, size_t length, pico_release_t *re
     if (!end || end != json + length) valid = false;
     const cJSON *schema = cJSON_GetObjectItemCaseSensitive(root, "schema");
     const cJSON *size = cJSON_GetObjectItemCaseSensitive(root, "size");
-    unsigned version[4], base[4];
+    unsigned version[VERSION_FIELDS], base[VERSION_FIELDS];
     valid = valid && cJSON_IsNumber(schema) && schema->valuedouble == 1 &&
         field(root, "version", release->version, sizeof(release->version)) &&
         field(root, "project", release->project, sizeof(release->project)) &&
@@ -94,6 +108,7 @@ esp_err_t pico_release_parse(const char *json, size_t length, pico_release_t *re
         cJSON_IsNumber(size) && size->valuedouble >= 288 && size->valuedouble <= 0x400000 &&
         size->valuedouble == (uint32_t)size->valuedouble &&
         version_parts(release->version, version) && version_parts(release->minimum_base_version, base) &&
+        !strcmp(release->project, PICO_OTA_PROJECT) &&
         !strcmp(release->board, PICO_OTA_BOARD) && !strcmp(release->layout, PICO_OTA_LAYOUT) &&
         pico_release_url_valid(release->url) && strlen(release->sha256) == 64;
     if (valid) {
