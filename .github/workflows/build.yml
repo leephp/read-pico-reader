@@ -9,7 +9,9 @@ on:
 jobs:
   display-host-tests:
     env:
+      PICO_WORKFLOW_TEST: ${{ secrets.PICO_WORKFLOW_TEST }}
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    run: test -n "$PICO_WORKFLOW_TEST"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
