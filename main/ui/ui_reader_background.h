@@ -10,4 +10,6 @@
 // Blended reading backgrounds use fixed screen coordinates; preview shows the same source tones.
 bool ui_reader_background_prepare(const char *path);
 void ui_reader_background_release(void);
+void ui_reader_background_sample(uint8_t *fb, EpdRect rect, const char *builtin);
+void ui_reader_background_paint_level(uint8_t *fb, EpdRect area, bool blend, unsigned strength);
 void ui_reader_background_paint(uint8_t *fb, EpdRect area, bool blend);

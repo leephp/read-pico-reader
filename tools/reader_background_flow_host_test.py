@@ -22,7 +22,7 @@ unit=r'''
 typedef struct {int x,y,width,height;} EpdRect;
 typedef enum {APP_REDRAW_NONE,APP_REDRAW_AREA,APP_REDRAW_PAGE} app_redraw_t;
 enum {READING,SHELF};
-enum {READER_PANEL_FONT_SETTINGS,READER_PANEL_BACKGROUND,READER_PANEL_BACKGROUND_PREVIEW};
+enum {READER_PANEL_READING_DISPLAY,READER_PANEL_NONE,READER_PANEL_BACKGROUND,READER_PANEL_BACKGROUND_PREVIEW};
 typedef struct {char path[288];} reader_background_item_t;
 static reader_background_item_t *s_backgrounds;
 static int s_background_count,s_background_selected,s_background_page,s_view=READING,s_reader_panel;
@@ -40,12 +40,17 @@ static int mock_stat(const char *path,struct stat *st){
 static void *heap_caps_calloc(size_t n,size_t size,int caps){assert(n==128&&size==288&&caps==3);return oom?NULL:calloc(n,size);}
 static void copy_text(char *dst,size_t cap,const char *src){snprintf(dst,cap,"%s",src);}
 static const char *app_settings_book_background_path(void){return configured;}
-static bool app_settings_set_book_background_path(const char *path){if(!save_ok)return false;copy_text(configured,sizeof(configured),path);return true;}
+static unsigned saved_level,s_background_level;
+static char s_background_draft[288];
+static bool app_settings_set_background(const char *path,unsigned level){if(!save_ok)return false;saved_level=level;copy_text(configured,sizeof(configured),path);return true;}
 static bool ui_rect_hit(EpdRect r,int x,int y){return x>=r.x&&y>=r.y&&x<r.x+r.width&&y<r.y+r.height;}
 static void invalidate_prep(void){++invalidations;}
-static bool ui_reader_background_prepare(const char *path){assert(strstr(path,"/sdcard/pictures/wallpaper-"));++decodes;return decode_ok;}
+static bool ui_reader_background_prepare(const char *path){(void)path;++decodes;return decode_ok;}
 '''
-for n in ('background_compare','reader_background_scan','reader_background_pages','reader_background_row','reader_background_preview','reader_background_step','reader_background_action','reader_background_tick'):
+src=book.read_text()
+unit+='#define BOOK_BG_MOUNTAIN "builtin:mountain"\n#define BOOK_BG_BAMBOO "builtin:bamboo"\n'
+unit+=src[src.index('static const char *const background_presets'):src.index('static void draw_background_picker')]
+for n in ('background_compare','reader_background_scan','reader_background_pages','reader_background_row','reader_background_preview_path','reader_background_step','reader_background_action','reader_background_tick'):
     unit+=function(n,book)+'\n'
 unit+=r'''
 int main(int argc,char **argv){
@@ -54,26 +59,22 @@ int main(int argc,char **argv){
  for(int i=0;i<16;++i){char expected[288];snprintf(expected,sizeof(expected),"/sdcard/pictures/wallpaper-%02d.%s",i,i==15?"PNG":"jpg");assert(!strcmp(expected,s_backgrounds[i].path));}
  s_reader_panel=READER_PANEL_BACKGROUND;
  assert(reader_background_action(500,1060)==APP_REDRAW_PAGE&&s_background_page==2&&decodes==0);
- assert(reader_background_action(100,370)==APP_REDRAW_NONE&&s_reader_panel==READER_PANEL_BACKGROUND_PREVIEW&&s_background_selected==14&&decodes==0);
+ assert(reader_background_action(100,370)==APP_REDRAW_PAGE&&s_reader_panel==READER_PANEL_BACKGROUND_PREVIEW&&!s_backgrounds&&decodes==0);
  assert(reader_background_tick()==APP_REDRAW_PAGE&&s_background_ready&&decodes==1);
- assert(reader_background_step(-1)==APP_REDRAW_NONE&&s_background_selected==13);
- assert(reader_background_tick()==APP_REDRAW_PAGE&&decodes==2);
- assert(reader_background_action(300,1130)==APP_REDRAW_PAGE&&s_reader_panel==READER_PANEL_BACKGROUND&&s_background_page==1);
- assert(strstr(configured,"09.jpg")&&!s_background_prepare_pending);
- assert(reader_background_action(100,370)==APP_REDRAW_NONE&&s_background_selected==7);
- assert(reader_background_action(60,250)==APP_REDRAW_PAGE&&reader_background_tick()==APP_REDRAW_NONE&&decodes==2);
- reader_background_preview(15);decode_ok=false;
+ assert(strstr(s_background_draft,"14.jpg")&&strstr(configured,"09.jpg"));
+ assert(reader_background_action(60,660)==APP_REDRAW_PAGE&&s_reader_panel==READER_PANEL_READING_DISPLAY);
+ reader_background_preview_path(BOOK_BG_BAMBOO);decode_ok=false;
  assert(reader_background_tick()==APP_REDRAW_PAGE&&!s_background_ready&&s_background_preview_notice[0]);
- assert(reader_background_action(500,1130)==APP_REDRAW_NONE&&strstr(configured,"09.jpg"));
- decode_ok=true;reader_background_preview(15);assert(reader_background_tick()==APP_REDRAW_PAGE);
- save_ok=false;assert(reader_background_action(500,1130)==APP_REDRAW_NONE&&s_reader_panel==READER_PANEL_BACKGROUND_PREVIEW);
- save_ok=true;assert(reader_background_action(500,1130)==APP_REDRAW_PAGE&&s_reader_panel==READER_PANEL_BACKGROUND&&strstr(configured,"15.PNG"));
- unsigned before=decodes;assert(reader_background_step(1)==APP_REDRAW_NONE&&decodes==before);
- assert(reader_background_action(100,1150)==APP_REDRAW_PAGE&&!configured[0]);
- assert(reader_background_action(500,1150)==APP_REDRAW_PAGE&&!s_backgrounds&&s_reader_panel==READER_PANEL_FONT_SETTINGS);
+ assert(reader_background_action(500,1150)==APP_REDRAW_NONE&&strstr(configured,"09.jpg"));
+ decode_ok=true;reader_background_action(300,850);reader_background_tick();
+ reader_background_action(450,1020);assert(s_background_level==1);
+ save_ok=false;assert(reader_background_action(500,1150)==APP_REDRAW_PAGE&&s_reader_panel==READER_PANEL_BACKGROUND_PREVIEW&&strstr(configured,"09.jpg"));
+ save_ok=true;assert(reader_background_action(500,1150)==APP_REDRAW_PAGE&&s_reader_panel==READER_PANEL_NONE&&!strcmp(configured,BOOK_BG_MOUNTAIN)&&saved_level==1);
+ reader_background_preview_path("");decode_ok=false;reader_background_tick();
+ assert(s_background_ready);reader_background_action(500,1150);assert(!configured[0]);
  mount=argv[2];reader_background_scan();assert(s_background_count==128&&s_background_notice[0]);
  oom=true;reader_background_scan();assert(!s_backgrounds&&s_background_count==0&&s_background_notice[0]);
- puts("PASS: sorted pictures catalogue, hidden AppleDouble files/directories/empty/unsupported files filtered; no directory decode; paging, deferred preview/swipes, back preserves directory and setting, apply/save/decode failure, cancellation, 128-file bound and OOM");
+ puts("PASS: sorted pictures catalogue, hidden AppleDouble files/directories/empty/unsupported files filtered; no directory decode; paging, deferred preview, cancel preserves setting, built-in selection and strength, apply/save/decode failure, cancellation, 128-file bound and OOM");
 }
 '''
 with tempfile.TemporaryDirectory(dir=ROOT/'build') as directory:

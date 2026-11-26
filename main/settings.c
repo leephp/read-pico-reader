@@ -133,6 +133,7 @@ static uint8_t s_book_weight = 2;
 static int8_t s_book_weight_fine;
 static bool s_book_antialias = true;
 static char s_book_background[288];
+static uint8_t s_background_strength = 2; /* Preserve existing wallpapers at original contrast. */
 static uint8_t s_reader_full_pages = 15;
 static uint8_t s_reader_turn_effect;
 static uint8_t s_book_line = 130, s_book_para = 50, s_book_margin = 24;
@@ -318,9 +319,11 @@ void app_settings_init(void) {
     s_book_antialias = nvs_get_u8(h, NVS_KEY_BOOK_AA, &antialias) != ESP_OK || antialias != 0;
     uint8_t book_px = 48;
     if (nvs_get_u8(h, NVS_KEY_BOOK_PX, &book_px) == ESP_OK) s_book_px = valid_book_px(book_px);
+    uint8_t strength;
+    s_background_strength = nvs_get_u8(h,"bk_bg_level",&strength)==ESP_OK && strength<=2 ? strength : 2;
     size_t background_len = sizeof(s_book_background);
     if (nvs_get_str(h, NVS_KEY_BOOK_BACKGROUND, s_book_background, &background_len) != ESP_OK ||
-        (s_book_background[0] && strncmp(s_book_background, "/sdcard/pictures/", 17))) s_book_background[0] = 0;
+        (s_book_background[0] && !app_settings_builtin_background(s_book_background) && strncmp(s_book_background, "/sdcard/pictures/", 17))) s_book_background[0] = 0;
     uint8_t reader_full_pages = 15;
     if (nvs_get_u8(h, NVS_KEY_READER_FULL, &reader_full_pages) == ESP_OK &&
         (reader_full_pages == 0 || reader_full_pages == 5 || reader_full_pages == 10 ||
@@ -722,15 +725,24 @@ void app_settings_set_book_layout(uint8_t px, uint8_t margin, uint8_t line, uint
 }
 
 const char *app_settings_book_background_path(void) { return s_book_background; }
+bool app_settings_builtin_background(const char *path) {
+    return path && (!strcmp(path, BOOK_BG_MOUNTAIN) || !strcmp(path, BOOK_BG_BAMBOO));
+}
+unsigned app_settings_background_strength(void) { return s_background_strength; }
 bool app_settings_set_book_background_path(const char *path) {
-    if (!path || (path[0] && strncmp(path, "/sdcard/pictures/", 17)) ||
+    return app_settings_set_background(path, s_background_strength);
+}
+bool app_settings_set_background(const char *path, unsigned strength) {
+    if (strength > 2 || !path || (path[0] && !app_settings_builtin_background(path) && strncmp(path, "/sdcard/pictures/", 17)) ||
         strnlen(path, sizeof(s_book_background)) >= sizeof(s_book_background) || strstr(path, "/../")) return false;
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return false;
     esp_err_t err = nvs_set_str(h, NVS_KEY_BOOK_BACKGROUND, path);
+    if (err == ESP_OK) err = nvs_set_u8(h, "bk_bg_level", strength);
     if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
     if (err != ESP_OK) return false;
+    s_background_strength = strength;
     strlcpy(s_book_background, path, sizeof(s_book_background));
     return true;
 }
@@ -1060,7 +1072,7 @@ static bool backup_background_valid(const settings_backup_background_t *backgrou
     uint32_t stored = 0;
     for (unsigned i = 0; i < 4; ++i) stored |= (uint32_t)background->checksum[i] << (i * 8);
     return strnlen(background->path, sizeof(background->path)) < sizeof(background->path) &&
-        (!background->path[0] || !strncmp(background->path, "/sdcard/pictures/", 17)) &&
+        (!background->path[0] || app_settings_builtin_background(background->path) || !strncmp(background->path, "/sdcard/pictures/", 17)) &&
         stored == backup_background_checksum(background);
 }
 typedef struct { uint8_t component, minutes, checksum[4]; } settings_backup_home_t;
@@ -1075,7 +1087,7 @@ static bool backup_home_valid(const settings_backup_home_t *v) {
 static unsigned backup_version(const settings_backup_v1_t *backup) {
     if (memcmp(backup->magic, "PICOSET", 7)) return 0;
     unsigned char c = backup->magic[7];
-    return c >= '1' && c <= '9' ? c - '0' : c == 'A' ? 10 : c == 'B' ? 11 : c == 'C' ? 12 : c == 'D' ? 13 : c == 'E' ? 14 : c == 'F' ? 15 : c == 'G' ? 16 : c == 'H' ? 17 : c == 'I' ? 18 : c == 'J' ? 19 : c == 'K' ? 20 : c == 'L' ? 21 : c == 'M' ? 22 : c == 'N' ? 23 : c == 'O' ? 24 : c == 'P' ? 25 : c == 'Q' ? 26 : 0;
+    return c >= '1' && c <= '9' ? c - '0' : c == 'A' ? 10 : c == 'B' ? 11 : c == 'C' ? 12 : c == 'D' ? 13 : c == 'E' ? 14 : c == 'F' ? 15 : c == 'G' ? 16 : c == 'H' ? 17 : c == 'I' ? 18 : c == 'J' ? 19 : c == 'K' ? 20 : c == 'L' ? 21 : c == 'M' ? 22 : c == 'N' ? 23 : c == 'O' ? 24 : c == 'P' ? 25 : c == 'Q' ? 26 : c == 'R' ? 27 : 0;
 }
 
 static void backup_erase_secret(void *ptr, size_t size) {
@@ -1156,7 +1168,7 @@ static bool backup_card_ready(void) {
 // Write into a caller-owned stream so the card and memory exports share one byte layout.
 static esp_err_t backup_write_stream(FILE *file, bool rotate) {
     settings_backup_v1_t backup = {0};
-    memcpy(backup.magic, "PICOSETQ", sizeof(backup.magic));
+    memcpy(backup.magic, "PICOSETR", sizeof(backup.magic));
     uint8_t *f = backup.flags;
     f[BK_SLEEP] = s_sleep;
     f[BK_PICKUP] = s_pickup_wake;
@@ -1171,7 +1183,7 @@ static esp_err_t backup_write_stream(FILE *file, bool rotate) {
     f[BK_TURN] = s_reader_turn_effect;
     f[BK_POWER_TURN] = s_reader_power_turn;
     // v22：独立入口与沉浸位，保留固定布局与旧版读取。/ Independent entry/immersion bits; retain layout and legacy decoding.
-    f[BK_IMMERSIVE] = (uint8_t)s_reader_immersive + 2*(uint8_t)s_reader_default_fullscreen + 4*(uint8_t)s_reader_equal_margins;
+    f[BK_IMMERSIVE] = (uint8_t)s_reader_immersive + 2*(uint8_t)s_reader_default_fullscreen + 4*(uint8_t)s_reader_equal_margins + 8*(2-s_background_strength);
     f[BK_TRACKING] = s_book_tracking;
     // v21把范围与样式封在同一校验字段，旧版本0..2始终跟随文字。
     // V21 seals span and style together; legacy0..2 always follow text.
@@ -1334,7 +1346,7 @@ static bool backup_valid(const settings_backup_v1_t *backup) {
         f[BK_SHAKE] > 1 || (f[BK_FULL_PAGES] != 0 && f[BK_FULL_PAGES] != 5 &&
                             f[BK_FULL_PAGES] != 10 && f[BK_FULL_PAGES] != 15 &&
                             f[BK_FULL_PAGES] != 30) ||
-        f[BK_TURN] > READER_TURN_EFFECT_MAX || f[BK_POWER_TURN] > 1 || f[BK_IMMERSIVE] > (backup_version(backup)>=23 ? 7 : backup_version(backup)>=22 ? 3 : 1) ||
+        f[BK_TURN] > READER_TURN_EFFECT_MAX || f[BK_POWER_TURN] > 1 || f[BK_IMMERSIVE] > (backup_version(backup)>=27 ? 23 : backup_version(backup)>=23 ? 7 : backup_version(backup)>=22 ? 3 : 1) ||
         f[BK_TRACKING] > (backup_version(backup)>=20 ? APP_BOOK_TRACK_COUNT-1 : backup_version(backup)==19 ? 20 : 4) || f[BK_READING_LINE] > (backup_version(backup) >= 21 ? 5 : 2) ||
         f[BK_LINE_SPACING] < 110 || f[BK_LINE_SPACING] > 150 ||
         f[BK_MARGIN] > 60 ||
@@ -1431,7 +1443,7 @@ static esp_err_t backup_apply_stream(FILE *file) {
     has_wifi = ok && version >= 7;
     if (has_wifi) ok = fread(&wifi, 1, sizeof(wifi), file) == sizeof(wifi) && backup_wifi_valid(&wifi);
     if (ok && version >= 14) ok = fread(&background, 1, sizeof(background), file) == sizeof(background) &&
-        backup_background_valid(&background) && backup_path_valid(background.path, sizeof(background.path));
+        backup_background_valid(&background) && (app_settings_builtin_background(background.path) || backup_path_valid(background.path, sizeof(background.path)));
     if (ok && version >= 16) ok = fread(&home, 1, sizeof(home), file) == sizeof(home) && backup_home_valid(&home);
     if(ok && version>=18)ok=fread(&bookmark,1,sizeof(bookmark),file)==sizeof(bookmark)&&
         backup_background_valid(&bookmark)&&backup_path_valid(bookmark.path,sizeof(bookmark.path));
@@ -1542,7 +1554,9 @@ static esp_err_t backup_apply_stream(FILE *file) {
     BACKUP_SET_U8(NVS_KEY_BOOK_PARA, BK_PARAGRAPH);
     BACKUP_SET_U8(NVS_KEY_SHELF_STYLE, BK_SHELF);
     if (err == ESP_OK) err = nvs_set_u8(h, NVS_KEY_SHELF_V22, 1);
-    if (background.path[0] && !backup_file_exists(background.path, false)) background.path[0] = 0;
+    if (background.path[0] && !app_settings_builtin_background(background.path) && !backup_file_exists(background.path, false)) background.path[0] = 0;
+    uint8_t strength = version >= 27 ? 2-(backup.flags[BK_IMMERSIVE] >> 3) : 2;
+    if (err == ESP_OK) err = nvs_set_u8(h, "bk_bg_level", strength);
     BACKUP_SET_STR(NVS_KEY_BOOK_BACKGROUND, background.path);
     BACKUP_SET_STR(NVS_KEY_FONT, backup.font);
     BACKUP_SET_STR(NVS_KEY_SYS_FONT, backup.system_font);
@@ -1606,6 +1620,7 @@ static esp_err_t backup_apply_stream(FILE *file) {
     s_book_margin = f[BK_MARGIN];
     s_book_para = f[BK_PARAGRAPH];
     s_shelf_style = f[BK_SHELF];
+    s_background_strength = strength;
     strlcpy(s_book_background, background.path, sizeof(s_book_background));
     s_home_component = (app_home_component_t)home.component;
     s_home_goal_minutes = home.minutes;

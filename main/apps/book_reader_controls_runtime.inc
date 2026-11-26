@@ -117,7 +117,13 @@ static app_redraw_t rc_panel_action(app_ctx_t*ctx,int x,int y,bool*handled){
         return APP_REDRAW_NONE;
     }
     if(s_reader_panel==READER_PANEL_READING_DISPLAY){
-        *handled=true;if(y<740||ui_rect_hit((EpdRect){32,765,64,64},x,y)||ui_rect_hit(rc_done_rect(),x,y))return rc_to_root(ctx,0);
+        *handled=true;if(y<664||ui_rect_hit((EpdRect){32,689,64,64},x,y)||ui_rect_hit(rc_done_rect(),x,y))return rc_to_root(ctx,0);
+        if (ui_rect_hit((EpdRect){36,780,612,82},x,y)) {
+            const char *path=app_settings_book_background_path();
+            s_background_level=path[0] ? app_settings_background_strength() : 0;
+            reader_background_preview_path(path);
+            return APP_REDRAW_PAGE;
+        }
         for(int i=0;i<4;++i)if(ui_rect_hit(rc_display_rect(i),x,y)){
             if(!i){if(!app_settings_set_reader_default_fullscreen(!app_settings_reader_default_fullscreen()))rc_notice(ctx,"保存失败，请重试");return APP_REDRAW_PAGE;}
             return apply_reader_option(ctx,i);
@@ -241,7 +247,8 @@ static int rc_hit_target(int x,int y){
         return -1;
     }
     if(s_reader_panel==READER_PANEL_READING_DISPLAY){
-        if(y<826||ui_rect_hit(rc_done_rect(),x,y))return 999;
+        if(y<750||ui_rect_hit(rc_done_rect(),x,y))return 999;
+        if(ui_rect_hit((EpdRect){36,780,612,82},x,y))return 104;
         for(int i=0;i<4;++i)if(ui_rect_hit(rc_display_rect(i),x,y))return 100+i;
         return -1;
     }

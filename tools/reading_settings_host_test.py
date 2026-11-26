@@ -55,6 +55,10 @@ static esp_err_t nvs_get_u8(nvs_handle_t h,const char *key,uint8_t *value){asser
 static esp_err_t nvs_set_u8(nvs_handle_t h,const char *key,uint8_t value){assert(h==1);pending_key=heading_key(key);pending_value=value;return ESP_OK;}
 static esp_err_t nvs_commit(nvs_handle_t h){assert(h==1);if(save_fail)return -1;*pending_key=pending_value;return ESP_OK;}
 static void nvs_close(nvs_handle_t h){assert(h==1);}
+static unsigned s_background_level;
+static const char *app_settings_book_background_path(void){return "";}
+static unsigned app_settings_background_strength(void){return 2;}
+static void reader_background_preview_path(const char *p){assert(!*p);}
 static app_redraw_t apply_reader_option(app_ctx_t*c,int kind){(void)c;assert(kind>=1&&kind<=3);++options[kind];return APP_REDRAW_PAGE;}
 '''
 header=(R/'main/settings.h').read_text()

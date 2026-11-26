@@ -57,13 +57,13 @@ static book_layout_draw_cursor_t s_prep_cursor;
 static SemaphoreHandle_t s_draw_lock,s_prep_done;
 static TaskHandle_t s_prep_task;
 static atomic_bool s_prep_stop;
-static unsigned work,allocs;static bool fail_alloc,fail_draw,wallpaper,images;
+static unsigned work,allocs;static bool fail_alloc,fail_draw,images;
 static size_t free_space=4u*1024u*1024u;
 static size_t fb_bytes(void){return 128;}
 static size_t book_layout_page_count(void){return 500;}
 static unsigned book_layout_page_image_count(size_t page){(void)page;return images;}
 static uint32_t book_layout_generation(void){return generation;}
-static const char *app_settings_book_background_path(void){return wallpaper?"wallpaper":"";}
+
 static EpdRect body_rect(void){return(EpdRect){1,2,3,4};}
 static size_t heap_caps_get_free_size(int caps){assert(caps==3);return free_space;}
 static void *heap_caps_aligned_alloc(size_t align,size_t n,int caps){assert(align==16&&caps==3);++allocs;return fail_alloc?NULL:malloc(n);}
@@ -147,11 +147,11 @@ int main(void){touch_t touch={0};app_ctx_t ctx={.touch=&touch};
  old=work;reader_prefetch_idle(&ctx);assert(work>old&&work<=old+8&&s_next_page==-1);
  ++generation;assert(!reader_prefetch_resume(s_prep_page));invalidate_prep();
  fail_task=true;assert(!kick_prep());fail_task=false;fail_draw=true;reader_prefetch_idle(&ctx);assert(s_prep_page==-1&&s_next_page==-1);fail_draw=false;
- invalidate_prep();images=true;assert(!kick_prep());images=false;wallpaper=true;assert(!kick_prep());wallpaper=false;
+ invalidate_prep();images=true;assert(!kick_prep());images=false;assert(kick_prep());reader_prefetch_end(true);invalidate_prep();
  s_toolbar=true;assert(!kick_prep());s_toolbar=false;s_reader_panel=READER_PANEL_FONT;assert(!kick_prep());s_reader_panel=READER_PANEL_NONE;
  s_page=499;assert(!kick_prep());
  destroy_worker();free(s_next_fb);
- puts("PASS: real-thread scan overlap, row-boundary stop instead of whole-page join, partial-page continuation, 40 rapid cache hits, 40 backward turns, 40 alternating pairs with white-tail isolation, input/navigation priority and generation/OOM/image/background/panel guards");
+ puts("PASS: real-thread scan overlap, row-boundary stop instead of whole-page join, partial-page continuation, 40 rapid cache hits, 40 backward turns, 40 alternating pairs with white-tail isolation, input/navigation priority and generation/OOM/image/panel guards");
 }
 '''
 with tempfile.TemporaryDirectory() as d:

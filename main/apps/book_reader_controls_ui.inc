@@ -22,7 +22,7 @@ static EpdRect rc_interval_rect(unsigned plus) {
     EpdRect card = rc_auto_card(1);
     return (EpdRect){card.x+(plus?220:16),card.y+card.height-56,62,48};
 }
-static EpdRect rc_display_rect(int i){return(EpdRect){36+(i%2)*314,880+(i/2)*130,298,110};}
+static EpdRect rc_display_rect(int i){return(EpdRect){36+(i%2)*314,882+(i/2)*124,298,110};}
 static EpdRect rc_touch_rect(int target){
     switch(target){
     case RC_TAP_CENTER:return(EpdRect){210,934,264,52};
@@ -104,7 +104,8 @@ static void rc_draw_settings(uint8_t*fb){
     rc_done(fb,"完成");ui_text_set_system_scale(false);
 }
 static void rc_draw_display(uint8_t*fb){
-    ui_text_set_system_scale(true);draw_sheet(fb,740,"阅读显示");draw_sheet_back(fb,740);
+    ui_text_set_system_scale(true);draw_sheet(fb,664,"阅读显示");draw_sheet_back(fb,664);
+    rc_link(fb,(EpdRect){36,780,612,82},"阅读背景",app_settings_book_background_path()[0] ? "已设置" : "无图片");
     rc_toggle_card(fb,rc_display_rect(0),"默认全屏",app_settings_reader_default_fullscreen());
     rc_toggle_card(fb,rc_display_rect(1),"关闭上下状态栏",app_settings_reader_immersive());
     rc_toggle_card(fb,rc_display_rect(2),"显示书内图片",!app_settings_reader_hide_images());

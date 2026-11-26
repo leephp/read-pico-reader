@@ -114,6 +114,11 @@ static void ttf_draw_text_px_vertical(uint8_t *fb,int x,int y,int px,const char 
  if(!strcmp(text,"Title"))chapter_title_px=px;
  ui_fill_rect_fast((EpdRect){x,y,1,1},0,fb);
 }
+static bool s_background_ready;
+static unsigned s_background_level;
+static void ui_reader_background_paint_level(uint8_t *fb,EpdRect r,bool blend,unsigned strength){
+ (void)fb;(void)r;(void)blend;(void)strength;
+}
 static void ui_reader_background_paint(uint8_t *fb,EpdRect r,bool overlay){(void)fb;(void)r;assert(overlay);}
 static void draw_reader_images(uint8_t *fb,size_t page,EpdRect r){if(page)ui_fill_rect_fast(r,85,fb);}
 static char note_text[601];static const char *s_text=note_text;static size_t s_text_len=600,s_note_count=1;

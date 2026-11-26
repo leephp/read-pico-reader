@@ -1015,7 +1015,7 @@ int main(void) {
     assert(app_settings_set_reader_control(RC_BOTTOM_CENTER,RC_EFFECT));
     assert(app_settings_set_reader_auto_seconds(7));
     assert(app_settings_backup_save()==ESP_OK);
-    FILE*cf=fopen(BACKUP_FILE,"rb");assert(cf);settings_backup_v1_t ch;assert(fread(&ch,1,sizeof(ch),cf)==sizeof(ch)&&backup_version(&ch)==26);fclose(cf);
+    FILE*cf=fopen(BACKUP_FILE,"rb");assert(cf);settings_backup_v1_t ch;assert(fread(&ch,1,sizeof(ch),cf)==sizeof(ch)&&backup_version(&ch)==27);fclose(cf);
     assert(app_settings_set_reader_control(RC_BOTTOM_CENTER,RC_NONE));assert(app_settings_set_reader_auto_seconds(10));
     assert(app_settings_backup_restore()==ESP_OK);assert(app_settings_reader_controls()->actions[RC_BOTTOM_CENTER]==RC_EFFECT&&reader_controls_seconds(app_settings_reader_controls())==7);
     assert(app_settings_set_reader_control(RC_BOTTOM_CENTER,RC_BOOKMARK));
@@ -1086,6 +1086,15 @@ int main(void) {
     assert(app_settings_toggle_book_reading_line()&&!s_book_reading_line&&s_book_rule_saved==guide_preset);
     assert(app_settings_toggle_book_reading_line()&&s_book_reading_line==2&&s_book_rule_full&&s_book_rule_offset==7);
     free(guide_sync);
+
+    assert(app_settings_set_background(BOOK_BG_BAMBOO, 1));
+    assert(app_settings_backup_save() == ESP_OK);
+    assert(app_settings_set_background("", 2));
+    assert(app_settings_backup_restore() == ESP_OK);
+    assert(!strcmp(app_settings_book_background_path(), BOOK_BG_BAMBOO));
+    assert(app_settings_background_strength() == 1);
+    assert(!app_settings_set_background("builtin:unknown", 1));
+    assert(!app_settings_set_background(BOOK_BG_MOUNTAIN, 3));
 
     puts("settings backup host test passed (200% sizes, retired shelf migration, collage persistence/restore without wallpaper, unified backup name with both boards' legacy names)");
     return 0;

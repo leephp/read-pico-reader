@@ -29,9 +29,9 @@ static int mock_stat(const char *p,struct stat *st){(void)p;if(missing)return -1
 #define stat(p,s) mock_stat(p,s)
 static size_t heap_caps_get_free_size(unsigned caps){assert(caps==3);return available;}
 static size_t heap_caps_get_largest_free_block(unsigned caps){assert(caps==3);return largest;}
-static void *heap_caps_malloc(size_t bytes,unsigned caps){assert(caps==3&&!live&&bytes<=831744);if(oom)return NULL;live=bytes;if(live>peak)peak=live;++allocations;return malloc(bytes);}
-static void *heap_caps_realloc(void *p,size_t bytes,unsigned caps){assert(caps==3&&p&&bytes==(live+1)/2);if(shrink_fail)return NULL;void *out=realloc(p,bytes);if(out)live=bytes;return out;}
-static void test_free(void *p){if(p)live=0;free(p);}
+static void *heap_caps_malloc(size_t bytes,unsigned caps){assert(caps==3&&bytes<=831744);if(oom)return NULL;size_t *ptr=malloc(bytes+sizeof(size_t));assert(ptr);*ptr=bytes;live+=bytes;if(live>peak)peak=live;++allocations;return ptr+1;}
+static void *heap_caps_realloc(void *p,size_t bytes,unsigned caps){size_t *ptr=(size_t*)p-1;assert(caps==3&&bytes==(*ptr+1)/2);if(shrink_fail)return NULL;size_t old=*ptr;ptr=realloc(ptr,bytes+sizeof(size_t));assert(ptr);*ptr=bytes;live=live-old+bytes;return ptr+1;}
+static void test_free(void *p){if(p){size_t *ptr=(size_t*)p-1;live-=*ptr;free(ptr);}}
 #define free(p) test_free(p)
 static bool book_image_file_dimensions(const char *p,bool png,unsigned *w,unsigned *h){(void)p;(void)png;*w=source_w;*h=source_h;return true;}
 static uint8_t sample(unsigned x,unsigned y){return (uint8_t)(x*47u+y*37u);}
@@ -44,47 +44,71 @@ static int epd_height(void){return device_h;}
 static int epd_get_rotation(void){return rotation;}
 static int epd_rotated_display_width(void){return rotation%2?device_h:device_w;}
 static int epd_rotated_display_height(void){return rotation%2?device_w:device_h;}
-static uint8_t epd_get_pixel(int x,int y,int w,int h,const uint8_t *fb){assert(x>=0&&y>=0&&x<w&&y<h);return fb[(size_t)y*w+x];}
+static uint8_t epd_get_pixel(int x,int y,int w,int h,const uint8_t *fb){assert(x>=0&&y>=0&&x<w&&y<h);uint8_t byte=fb[(size_t)y*((w+1)/2)+x/2];return (x&1)?byte&0xf0:byte<<4;}
 static void epd_draw_pixel(int x,int y,uint8_t gray,uint8_t *fb){
  int px=x,py=y;
  switch(rotation){case EPD_ROT_PORTRAIT:px=device_w-y-1;py=x;break;case EPD_ROT_INVERTED_LANDSCAPE:px=device_w-x-1;py=device_h-y-1;break;case EPD_ROT_INVERTED_PORTRAIT:px=y;py=device_h-x-1;break;default:break;}
- assert(px>=0&&px<device_w&&py>=0&&py<device_h);fb[(size_t)py*device_w+px]=gray;
+ assert(px>=0&&px<device_w&&py>=0&&py<device_h);uint8_t *dst=fb+(size_t)py*((device_w+1)/2)+px/2;*dst=px&1?(*dst&15)|(gray&240):(*dst&240)|(gray>>4);
 }
 '''
 unit+=function('ui_image_dither_gray',ROOT/'main/ui/ui_image_dither.c')+'\n'
 s=BG.read_text();start=s.index('static uint8_t *s_gray;');end=s.index('void ui_reader_background_release(')
+unit+= '#define BOOK_BG_MOUNTAIN "builtin:mountain"\n#define BOOK_BG_BAMBOO "builtin:bamboo"\n'
+unit+= '#include "'+str(ROOT/'main/ui/reader_background_photos.inc')+'"\n'
+unit+=function('builtin_photo',BG)+'\n'
+unit+='static unsigned app_settings_background_strength(void){return 2;}\n'
 unit+=s[start:end]
-for n in ('ui_reader_background_release','ui_reader_background_prepare','read_pixel','ui_reader_background_paint'):unit+=function(n,BG)+'\n'
+for n in ('ui_reader_background_release','ui_reader_background_prepare','read_pixel','paint_pixels','ui_reader_background_paint_level','ui_reader_background_paint'):unit+=function(n,BG)+'\n'
 unit+=r'''
 int main(void){
  assert(!ui_reader_background_prepare("/sdcard/not-pictures/a.jpg")&&!live);
- uint8_t fb[64*96];
+ uint8_t fb[64*96/2];
+ assert(ui_reader_background_prepare(BOOK_BG_MOUNTAIN));
+ EpdRect all={0,0,epd_rotated_display_width(),epd_rotated_display_height()};
+ uint8_t strong[sizeof(fb)];
+ memset(strong,0xff,sizeof(strong)); memset(fb,0xff,sizeof(fb));
+ ui_reader_background_paint_level(strong,all,true,2); ui_reader_background_paint_level(fb,all,true,0);
+ bool lighter=false;
+ for(size_t i=0;i<sizeof(fb);++i){assert(fb[i]>=strong[i]);lighter|=fb[i]>strong[i];}
+ assert(lighter&&live==sizeof(fb));ui_reader_background_release();
  for(rotation=0;rotation<4;++rotation){
   assert(ui_reader_background_prepare("/sdcard/pictures/a.jpg"));
   int w=epd_rotated_display_width(),h=epd_rotated_display_height();
   assert(s_width==(unsigned)w&&s_height==(unsigned)h&&live==((size_t)w*h+1)/2);
+  uint8_t reference[sizeof(fb)];
+  EpdRect page={0,0,w,h};
+  for(unsigned level=0;level<3;++level){
+   for(size_t i=0;i<sizeof(fb);++i)fb[i]=reference[i]=(uint8_t)(i*43);
+   paint_pixels(reference,page,true,level);
+   ui_reader_background_paint_level(fb,page,true,level);
+   assert(!memcmp(fb,reference,sizeof(fb)));
+  }
   unsigned count=allocations,reads=decodes;
   for(int i=0;i<50;++i)assert(ui_reader_background_prepare("/sdcard/pictures/a.jpg"));
   assert(count==allocations&&reads==decodes);
-  memset(fb,0xf0,sizeof(fb));ui_reader_background_paint(fb,(EpdRect){0,0,w,h},true);
+  memset(fb,0xff,sizeof(fb));ui_reader_background_paint(fb,(EpdRect){0,0,w,h},true);
   // Every source pixel survives at native resolution; no fade, upscale or enlarged blocks.
   for(int y=0;y<h;++y)for(int x=0;x<w;++x)assert(read_pixel(fb,x,y)==(ui_image_dither_gray(sample(x,y),x,y)&0xf0));
-  uint8_t partial[64*96];memset(partial,0xf0,sizeof(partial));
+  uint8_t partial[sizeof(fb)];memset(partial,0xff,sizeof(partial));
   ui_reader_background_paint(partial,(EpdRect){0,0,w,h/2},true);
   ui_reader_background_paint(partial,(EpdRect){0,h/2,w,h-h/2},true);
   assert(!memcmp(fb,partial,sizeof(fb)));
-  memset(partial,0xf0,sizeof(partial));ui_reader_background_paint(partial,(EpdRect){8,9,24,32},true);
+  memset(partial,0xff,sizeof(partial));ui_reader_background_paint(partial,(EpdRect){8,9,24,32},true);
   for(int y=9;y<41;++y)for(int x=8;x<32;++x)assert(read_pixel(fb,x,y)==read_pixel(partial,x,y));
   assert(read_pixel(partial,2,2)==0xf0);
-  memset(partial,0xf0,sizeof(partial));epd_draw_pixel(12,12,0,partial);epd_draw_pixel(13,12,0x80,partial);
+  memset(partial,0xff,sizeof(partial));epd_draw_pixel(12,12,0,partial);epd_draw_pixel(13,12,0x80,partial);
   ui_reader_background_paint(partial,(EpdRect){4,4,24,32},true);
   assert(read_pixel(partial,12,12)==0);
   assert(read_pixel(partial,13,12)==((((ui_image_dither_gray(sample(13,12),13,12)>>4)*8+7)/15)<<4));
-  memset(partial,0xf0,sizeof(partial));ui_reader_background_paint(partial,(EpdRect){8,8,w/4,h/4},false);
+  memset(partial,0xff,sizeof(partial));ui_reader_background_paint(partial,(EpdRect){8,8,w/4,h/4},false);
   for(int y=0;y<h/4;++y)for(int x=0;x<w/4;++x)assert(read_pixel(partial,8+x,8+y)==(ui_image_dither_gray(sample(x*4,y*4),x*4,y*4)&0xf0));
   ui_reader_background_paint(partial,(EpdRect){-1,0,24,32},false);
   assert(count==allocations&&reads==decodes);
  }
+ // Drop the optional native cache under memory pressure, retaining the original rendering.
+ ui_reader_background_release();available=0;assert(ui_reader_background_prepare(BOOK_BG_BAMBOO));
+ memset(fb,0xff,sizeof(fb));ui_reader_background_paint(fb,(EpdRect){0,0,epd_rotated_display_width(),epd_rotated_display_height()},true);assert(!s_paper);
+ available=2u*1024u*1024u;
  // Native device geometry stays full-size while shrinking the one buffer in place.
  ui_reader_background_release();rotation=0;device_w=684;device_h=1216;
  assert(ui_reader_background_prepare("/sdcard/pictures/native.png"));assert(s_width==684&&s_height==1216&&live==415872&&peak==831744);
@@ -98,7 +122,7 @@ int main(void){
  shrink_fail=true;assert(!ui_reader_background_prepare("/sdcard/pictures/native.png")&&!live);shrink_fail=false;
  device_w=63;device_h=95;assert(ui_reader_background_prepare("/sdcard/pictures/odd.png")&&live==(63u*95u+1)/2&&(s_gray[live-1]&15)==15);
  device_w=2000;assert(!ui_reader_background_prepare("/sdcard/pictures/odd.png")&&!live);
- puts("PASS: native 684x1216/16-gray wallpaper; original tones and single-pixel detail; preview matches reader; fixed partial repaints in four rotations; black/AA preserved; one 415872B cache/831744B decode plane; reuse/modified file/low memory/fragmentation/OOM/decode/shrink failure and odd-size packing");
+ puts("PASS: native 684x1216/16-gray wallpaper; original tones and single-pixel detail; preview matches reader; fixed partial repaints in four rotations; black/AA preserved; packed cached output equals scalar output; optional 415872B paper cache with low-memory fallback; reuse/modified file/low memory/fragmentation/OOM/decode/shrink failure and odd-size packing");
 }
 '''
 ticket=r'''

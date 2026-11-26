@@ -119,6 +119,11 @@ uint8_t app_settings_book_px(void);
 /// 无效字号恢复 48。/ Invalid sizes fall back to 48.
 void app_settings_set_book_px(uint8_t px);
 /// Reading backgrounds are selected from /sdcard/pictures; empty means white.
+#define BOOK_BG_MOUNTAIN "builtin:mountain"
+#define BOOK_BG_BAMBOO "builtin:bamboo"
+bool app_settings_builtin_background(const char *path);
+unsigned app_settings_background_strength(void);
+bool app_settings_set_background(const char *path, unsigned strength);
 const char *app_settings_book_background_path(void);
 bool app_settings_set_book_background_path(const char *path);
 /// 阅读时每 5/10/15/30 页全刷；0 关闭周期全刷，手动全刷仍可用。
