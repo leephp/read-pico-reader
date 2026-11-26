@@ -1,8 +1,8 @@
 # kiikoread 源码模拟器 / Source simulator
 
-使用 v0.3.3-rc97 发布源码绘制 684×1216 界面，运行同一套 TXT/EPUB 排版、书签、阅读记录和设置代码。浏览器与 macOS 共用宿主适配；不执行 ESP32 BIN。WiFi、蓝牙、OTA、USB 和物理波形仍需实机验证。
+网页体验使用当前 Pico 源码绘制 684×1216 界面，运行同一套 TXT/EPUB 排版、书签、阅读记录和设置代码。浏览器与 macOS 共用宿主适配；不执行 ESP32 BIN。WiFi、蓝牙、OTA、USB 和物理波形仍需实机验证。
 
-The native and browser builds share host adapters around released firmware UI and reader code. This is source simulation, not ESP32 BIN emulation. Hardware connections and panel waveforms require device testing.
+The native and browser builds share host adapters around the firmware UI and reader code. This is source simulation, not ESP32 BIN emulation. Hardware connections and panel waveforms require device testing.
 
 ## 网页构建 / Browser build
 
@@ -15,9 +15,9 @@ PICO_SIM_FIRMWARE=../.. EMCC="$(command -v emcc)" NODE="$(command -v node)" pyth
 python3 web/dev_server.py 8880
 ```
 
-使用与 source-manifest.json 相同的发布 commit 检出仓库，再编译。环境变量指向该仓库根目录；本机已有 firmware/ 快照时可省略 PICO_SIM_FIRMWARE。构建不改固件源码；异步预取调整和测试目标元数据只生成到宿主副本。web/dist 的成品复制到 flash/simulator/ 发布。
+在要体验的 Pico 源码检出目录构建。默认使用当前仓库，版本来自 boards/pico/board.json，version.json 记录对应的 Git 提交。构建不改固件源码；异步预取调整和测试目标元数据只生成到宿主副本。web/dist 的成品复制到 flash/simulator/ 发布。
 
-Build against the release commit in source-manifest.json. PICO_SIM_FIRMWARE points to that checkout; omit it when using a prepared firmware/ snapshot. Generated host copies disable threaded prefetch and expose read-only tutorial targets; the firmware tree is unchanged. Publish web/dist as flash/simulator/.
+Build against the desired Pico checkout. The browser build defaults to this repository, reads the board version and records the Git commit. Generated host copies disable threaded prefetch and expose read-only tutorial targets; the firmware tree is unchanged. Publish web/dist as flash/simulator/.
 
 ## macOS
 

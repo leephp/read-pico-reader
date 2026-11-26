@@ -1,8 +1,9 @@
 {
-  "module": "pico-458b515a255f5a54.js",
-  "moduleSize": 75930,
-  "wasm": "pico-66b5b2249cbb4456.wasm",
-  "wasmSize": 1216303,
-  "data": "pico-11a2350559899957.data.gz",
-  "dataSize": 2128778
+  "version": "0.3.3-rc109-qdsx-v0.1.8",
+  "module": "pico-9b4338052f1f6fe1.js",
+  "moduleSize": 75987,
+  "wasm": "pico-e3c3bcacb0887b5d.wasm",
+  "wasmSize": 1390642,
+  "data": "pico-b1c80040463bd585.data.gz",
+  "dataSize": 2259534
 }

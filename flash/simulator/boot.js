@@ -7,5 +7,5 @@ window.addEventListener('kiikoread:boot-progress',e=>{if(complete)return;detail.
 window.addEventListener('kiikoread:boot-ready',()=>{complete=true;clearTimeout(timer);layer.hidden=true;});
 window.addEventListener('kiikoread:boot-error',e=>fail(e.detail));
 if(!globalThis.WebAssembly||!globalThis.Worker){fail('当前浏览器不支持模拟器，请更新 Safari 后重试。');return;}
-watch();import('./simulator.js?v=mobile-20261021').catch(()=>fail('界面资源下载失败，请点重新加载。'));
+watch();import('./simulator.js?v=qdsx-v018').catch(()=>fail('界面资源下载失败，请点重新加载。'));
 })();

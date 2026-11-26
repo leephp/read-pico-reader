@@ -16,7 +16,9 @@
 #include "wear_levelling.h"
 
 /* 模拟器构建的版本标签；设备构建从不包含本文件。/ Version label for host builds; device builds never include this. */
+#ifndef SIM_FIRMWARE_VERSION
 #define SIM_FIRMWARE_VERSION "0.3.3-dev-sim"
+#endif
 
 /* main/setup_state.c */
 void app_setup_init(void);

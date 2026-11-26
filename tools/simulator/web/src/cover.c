@@ -29,9 +29,9 @@ bool book_png_file_layer(const char*p,unsigned w,unsigned h,uint8_t*gray,uint8_t
 bool book_cover_load_list_gray(const char*p,const char*t,const char*a,uint8_t*out,bool allow,bool*pending,unsigned*w,unsigned*h){
     *w=BOOK_COVER_W;*h=BOOK_COVER_H;if(pending)*pending=false;uint8_t*data=NULL;size_t n=0;bool png;
     if(allow&&book_epub_cover(p,&data,&n,&png)==ESP_OK){int sw=0,sh=0,c;uint8_t*rgba=stbi_load_from_memory(data,n,&sw,&sh,&c,4);free(data);if(rgba){double scale=fmin((double)*w/sw,(double)*h/sh);*w=lround(sw*scale);*h=lround(sh*scale);bool ok=resize(rgba,sw,sh,*w,*h,out,NULL,false);stbi_image_free(rgba);if(ok)return true;}}
-    return book_auto_cover_render(p,t,a,*w,*h,out);
+    return book_auto_cover_render(t,a,*w,*h,out);
 }
-bool book_cover_load_gray(const char*p,const char*t,const char*a,uint8_t*out,bool allow,bool*pending){unsigned w,h;uint8_t*data=NULL;size_t n=0;bool png;if(pending)*pending=false;if(allow&&book_epub_cover(p,&data,&n,&png)==ESP_OK){bool ok=book_cover_thumbnail(data,n,png,out);free(data);if(ok)return true;}return book_auto_cover_render(p,t,a,BOOK_COVER_W,BOOK_COVER_H,out);}
+bool book_cover_load_gray(const char*p,const char*t,const char*a,uint8_t*out,bool allow,bool*pending){unsigned w,h;uint8_t*data=NULL;size_t n=0;bool png;if(pending)*pending=false;if(allow&&book_epub_cover(p,&data,&n,&png)==ESP_OK){bool ok=book_cover_thumbnail(data,n,png,out);free(data);if(ok)return true;}return book_auto_cover_render(t,a,BOOK_COVER_W,BOOK_COVER_H,out);}
 int book_cover_load_io(const char*p,const char*t,const char*a,uint8_t*out,bool list,unsigned*w,unsigned*h,bool*automatic){*automatic=false;return(list?book_cover_load_list_gray(p,t,a,out,true,NULL,w,h):book_cover_load_gray(p,t,a,out,true,NULL))?1:-1;}
 bool book_cover_list_cache_dimensions(const char*p,const char*t,const char*a,unsigned*w,unsigned*h){return false;}
 bool book_cover_fast_cache_read(const char*p,const char*t,const char*a,book_fast_cover_key_t k,uint8_t*x,bool*e){return false;}
