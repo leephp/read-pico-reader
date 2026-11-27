@@ -13,7 +13,6 @@
     pico:{name:'小纸 Pico',manifest:'./manifest.json',catalog:'./releases.json',feed:'./update.json',family:'ESP32-S3',prefix:'Pico-update',filename:'Pico-update.bin',tag:'v',package:'kiikoread',description:'RDP-G01-W · ESP32-S3'},
     metalio:{name:'Metalio EINK 4 Plus',manifest:'./metalio/manifest.json',catalog:'./metalio/releases.json',feed:'./metalio-s31-update.json',family:'ESP32-S31',prefix:'Metalio-S31-update',filename:'Metalio-S31-update.bin',tag:'metalio-s31-v',package:'kiikoread-metalio47',description:'V1.5 · 34Pin · E0470A14-AF · ESP32-S31'}
   };
-  const customVersion='0.3.3-rc109-qdsx-v0.1.8';
   const query=new URLSearchParams(location.search);
   let device=query.get('device')==='metalio'?'metalio':'pico';
   let request=0, catalogReady=false, manifestReady=false, serialReady=false, selected=null;
@@ -92,9 +91,9 @@
       const catalog=await readJSON(model.catalog);if(current!==request)return;
       if(catalog.schema!==1||!Array.isArray(catalog.releases))throw Error('Invalid catalog');
       for(const release of catalog.releases){
-        if(device==='pico'&&release.version!==customVersion)continue;
         const path=device==='pico'?`releases/${release.version}/manifest.json`:`metalio/releases/${release.version}/manifest.json`;
         const customPico=device==='pico'&&/^\d+\.\d+\.\d+-rc\d+-qdsx-v\d+\.\d+\.\d+$/.test(release.version);
+        if(device==='pico'&&!customPico)continue;
         if((!customPico&&!/^\d+\.\d+\.\d+(?:-rc\d+)?$/.test(release.version))||release.manifest!==path||release.bin!==`${model.prefix}-${release.version}.bin`||releases.has(release.manifest))throw Error('Invalid release');
         releases.set(release.manifest,release);
         selector.appendChild(Object.assign(document.createElement('option'),{value:release.manifest,textContent:customPico?(release.display_name||release.version):`${release.version} · ${release.version===catalog.previous_version?(device==='metalio'?'上一版本':'上一正式版'):'历史版本'}`}));
