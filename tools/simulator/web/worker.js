@@ -22,7 +22,7 @@ function frame(id){
 function save(){if(!persistent)return;clearTimeout(saved);saved=setTimeout(()=>core.FS.syncfs(false,error=>{if(error)postMessage({type:'notice',text:'浏览器未允许保存，下次打开将重新体验。'});}),400);}
 async function initialize(options={}){
  demonstration=!!options.demo;progress('正在下载固件与阅读资源…');
- const runtime=await fetch(new URL('./runtime.json?v=qdsx-v018',import.meta.url),{cache:'no-cache'}).then(r=>{if(!r.ok)throw new Error('资源清单未能加载');return r.json();});
+ const runtime=await fetch(new URL('./runtime.json?v=__SIM_REVISION__',import.meta.url),{cache:'no-cache'}).then(r=>{if(!r.ok)throw new Error('资源清单未能加载');return r.json();});
  version=runtime.version;
  const [factory,wasm,downloaded]=await Promise.all([import(new URL(runtime.module,import.meta.url).href),download(runtime.wasm,'固件程序',runtime.wasmSize),download(runtime.data,'字体与示例书',runtime.dataSize)]);
  let data=downloaded;

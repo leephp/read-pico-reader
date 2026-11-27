@@ -54,10 +54,20 @@ jobs:
           path: ${{ runner.temp }}/web-firmware
           github-token: ${{ github.token }}
           run-id: ${{ steps.firmware.outputs.run_id }}
+      - name: Build browser simulator from the checked-out Pico source
+        shell: bash
+        run: |
+          sdk="$RUNNER_TEMP/emsdk"
+          git clone --quiet --depth 1 --branch 6.0.13 https://github.com/emscripten-core/emsdk.git "$sdk"
+          test "$(git -C "$sdk" rev-parse HEAD)" = 35659964bc2762fffec0d257997fb61475f765b7
+          "$sdk/emsdk" install 6.0.13
+          "$sdk/emsdk" activate 6.0.13
+          source "$sdk/emsdk_env.sh"
+          python3 tools/simulator/web/build.py
       - name: Validate and stage public flashing files
         run: |
           python3 tools/stage_public_flash.py _site --web-package "$RUNNER_TEMP/web-firmware/pico" \
-            --source-commit "$(git rev-parse HEAD)" --build-date "$(git show -s --format=%cI HEAD)"
+            --simulator tools/simulator/web/dist --source-commit "$(git rev-parse HEAD)" --build-date "$(git show -s --format=%cI HEAD)"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

@@ -89,7 +89,7 @@ def stage_web_package(output: Path, package: Path, source_commit: str, build_dat
 
 
 def stage(output: Path, ota_origin: str | None = None, *, web_package: Path | None = None,
-          source_commit: str = "", build_date: str = "") -> None:
+          source_commit: str = "", build_date: str = "", simulator: Path | None = None) -> None:
     output.mkdir(parents=True, exist_ok=True)
     for name in ("index.html", "notices.html", "manual.html", "site.css", "site.js", "installer-bridge.js", "flasher-integrity.js", "metalio-installer.js", "metalio-flash-core.js", "metalio-connection.js", "metalio-flash-reader.js", "metalio-transport.js", "metalio-native-stub.js", "_headers",
                  "manifest.json", "toc-preview.png", "firmware.bin",
@@ -105,8 +105,15 @@ def stage(output: Path, ota_origin: str | None = None, *, web_package: Path | No
         shutil.copytree(FLASH / "new-features", output / "new-features", dirs_exist_ok=True)
     # 中文：只发布构建好的模拟器；宿主源码、个人书库和工具链留在站点外。
     # English: Publish built simulator assets only, excluding sources, personal files and toolchains.
-    if (FLASH / "simulator").is_dir():
-        shutil.copytree(FLASH / "simulator", output / "simulator", dirs_exist_ok=True)
+    if simulator is not None:
+        board = json.loads((ROOT / "boards/pico/board.json").read_text())
+        metadata = json.loads((simulator / "version.json").read_text())
+        runtime = json.loads((simulator / "runtime.json").read_text())
+        if metadata != {"version": board["version"], "release_commit": source_commit} or runtime["version"] != board["version"]:
+            raise ValueError("Browser simulator differs from the selected Pico revision")
+    simulator = simulator or FLASH / "simulator"
+    if simulator.is_dir():
+        shutil.copytree(simulator, output / "simulator", dirs_exist_ok=True)
     version = json.loads((FLASH / "manifest.json").read_text())["version"]
     versioned = FLASH / f"Pico-update-{version}.bin"
     if versioned.is_file(): shutil.copy2(versioned, output / versioned.name)
@@ -199,6 +206,7 @@ if __name__ == "__main__":
     parser.add_argument('--web-package', type=Path)
     parser.add_argument('--source-commit', default='')
     parser.add_argument('--build-date', default='')
+    parser.add_argument("--simulator", type=Path)
     args = parser.parse_args()
     stage(args.output, args.ota_origin, web_package=args.web_package,
-          source_commit=args.source_commit, build_date=args.build_date)
+          source_commit=args.source_commit, build_date=args.build_date, simulator=args.simulator)

@@ -51,3 +51,8 @@ subprocess.run([os.environ.get('NODE') or shutil.which('node') or str(r/'build/t
 print('Browser firmware ready:',dist)
 
 runpy.run_path(str(web/'pack_runtime.py'))['pack'](dist)
+
+for name in ('worker.js', 'simulator.js', 'boot.js', 'index.html', 'NOTICE.txt'):
+    target = dist / name
+    target.write_text(target.read_text().replace('__SIM_REVISION__', commit)
+                      .replace('__SIM_VERSION__', version))

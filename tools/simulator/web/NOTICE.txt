@@ -1,4 +1,4 @@
-kiikoread qdsx-v0.1.8 source-level simulator
+kiikoread __SIM_VERSION__ source-level simulator
 
 Firmware and bundled assets retain their original licenses. See ../notices.html and ../LICENSE.
 
