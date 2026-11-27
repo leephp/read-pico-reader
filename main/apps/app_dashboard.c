@@ -264,6 +264,12 @@ static bool recent_visit(const char *path,const book_progress_t *progress,void *
         consider_book(path,&st);
     return true;
 }
+static void load_pending_excerpt(const home_book_t *featured) {
+    pending_excerpt[0]=0;
+    if (!atomic_load(&home_scan_cancel) && featured->has_progress)
+        book_excerpt_load(featured->path,featured->progress.chapter,pending_excerpt);
+}
+
 static void scan_books(void) {
     char last[BOOK_STORE_PATH_MAX];
     // 不支持的恢复记录只跳过，不删除其他固件的缓存和阅读位置。
@@ -310,9 +316,7 @@ static void scan_books(void) {
                 copy_title(featured->author,sizeof(featured->author),metadata_author);
         }
     }
-    pending_excerpt[0]=0;
-    if (!atomic_load(&home_scan_cancel) && featured->has_progress)
-        book_excerpt_load(featured->path,featured->progress.chapter,pending_excerpt);
+    load_pending_excerpt(featured);
 }
 
 static void cancel_home_scan(void) {

@@ -9,6 +9,7 @@ unit=r'''
 #include <assert.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,10 +38,10 @@ unit+='\n#include "'+str(ROOT/'main/book/book_excerpt.c')+'"\n'
 unit+=r'''
 typedef struct {char path[288];bool has_progress;struct {uint16_t chapter;}progress;}home_book_t;
 static home_book_t current;
-static char s_excerpt[BOOK_EXCERPT_CAP];
-static home_book_t *featured(void){return &current;}
+static char pending_excerpt[BOOK_EXCERPT_CAP];
+static atomic_bool home_scan_cancel;
 '''
-unit+=function('refresh_excerpt',ROOT/'main/apps/app_dashboard.c')+'\n'
+unit+=function('load_pending_excerpt',ROOT/'main/apps/app_dashboard.c')+'\n'
 unit+=r'''
 static void offer(unsigned chapter,const char *s){html_text_t t={.utf8=(char*)s,.len=strlen(s)};book_excerpt_offer("/sdcard/book.epub",chapter,&t);}
 static void read_quote(unsigned chapter,const char *expected){char out[BOOK_EXCERPT_CAP];memset(out,0xaa,sizeof(out));bool found=book_excerpt_load("/sdcard/book.epub",chapter,out);assert(found==(expected!=NULL));assert(expected?!strcmp(out,expected):out[0]==0);}
@@ -51,10 +52,12 @@ int main(void){
  unsigned before=writes;offer(0,first);assert(writes==before);
  offer(1,second);read_quote(1,second);read_quote(0,NULL);
  strcpy(current.path,"/sdcard/book.epub");current.has_progress=true;current.progress.chapter=1;
- refresh_excerpt();assert(!strcmp(s_excerpt,second));
- current.progress.chapter=0;refresh_excerpt();assert(!s_excerpt[0]);
- current.progress.chapter=1;refresh_excerpt();assert(!strcmp(s_excerpt,second));
- current.has_progress=false;refresh_excerpt();assert(!s_excerpt[0]);
+ load_pending_excerpt(&current);assert(!strcmp(pending_excerpt,second));
+ current.progress.chapter=0;load_pending_excerpt(&current);assert(!pending_excerpt[0]);
+ current.progress.chapter=1;load_pending_excerpt(&current);assert(!strcmp(pending_excerpt,second));
+ atomic_store(&home_scan_cancel,true);load_pending_excerpt(&current);assert(!pending_excerpt[0]);
+ atomic_store(&home_scan_cancel,false);load_pending_excerpt(&current);assert(!strcmp(pending_excerpt,second));
+ current.has_progress=false;load_pending_excerpt(&current);assert(!pending_excerpt[0]);
  // 没有完整句子的章节不能继续显示上一章；回跳重新取该章。
  // Chapters without a complete sentence cannot reuse a previous chapter; jumping back re-offers its text.
  offer(2,"unfinished text without punctuation");read_quote(2,NULL);read_quote(1,second);

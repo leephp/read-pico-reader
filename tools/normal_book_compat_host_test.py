@@ -99,7 +99,7 @@ static bool book_store_flash_ready(void){return false;}
 typedef struct {bool mounted;} read_pico_sd_info_t;
 static void read_pico_sd_get_info(read_pico_sd_info_t *out){out->mounted=true;}
 '''
-for name in ('is_book','copy_title','title_for','consider_book','scan_root','recent_visit','scan_books'):
+for name in ('is_book','copy_title','title_for','consider_book','scan_root','recent_visit','load_pending_excerpt','scan_books'):
     unit += function(name, home) + '\n'
 unit += r'''
 static void seed(const char *dir){
