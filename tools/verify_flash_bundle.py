@@ -11,6 +11,9 @@ import re
 from pathlib import Path
 
 
+ARCHIVE_VERSION = r"\d+\.\d+\.\d+(?:-rc\d+(?:-qdsx-v\d+\.\d+\.\d+)?)?"
+
+
 EXPECTED = {
     "bootloader.bin": (0x0, 0x8000),
     "partitions.bin": (0x8000, 0x10000),
@@ -31,7 +34,7 @@ def check_archived_releases(folder: Path, current_partitions: Path | None = None
     versions = set()
     for release in catalog["releases"]:
         version = release["version"]
-        assert re.fullmatch(r"\d+\.\d+\.\d+(?:-rc\d+)?", version)
+        assert re.fullmatch(ARCHIVE_VERSION, version), f"invalid archive version: {version}"
         assert version not in versions, "duplicate archived version"
         versions.add(version)
         assert re.fullmatch(r"[0-9a-f]{40}", release["source_commit"]), "missing release provenance"

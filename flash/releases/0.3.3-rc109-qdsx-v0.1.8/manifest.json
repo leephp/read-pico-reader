@@ -5,6 +5,11 @@
   "experimental_main_clean": false,
   "project": "Read_Pico",
   "new_install_prompt_erase": true,
+  "pico_ota": {
+    "layout": "pico-dual-4m-v1",
+    "base_version": "0.3.3-rc109-qdsx-v0.1.8",
+    "rollback": true
+  },
   "builds": [
     {
       "chipFamily": "ESP32-S3",

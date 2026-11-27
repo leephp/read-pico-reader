@@ -6,6 +6,7 @@
       "display_name": "厂长魔改版 · qdsx-v0.1.8",
       "manifest": "releases/0.3.3-rc109-qdsx-v0.1.8/manifest.json",
       "bin": "Pico-update-0.3.3-rc109-qdsx-v0.1.8.bin",
+      "source_commit": "76765d377a0439833c87091148f63f0e578869e3",
       "files": {
         "bootloader.bin": {
           "size": 21232,
