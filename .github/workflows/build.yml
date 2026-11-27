@@ -194,3 +194,15 @@ jobs:
           build/settings-backup
           sh tools/run_app_loop_host_tests.sh
           bash tools/run_display_navigation_tests.sh
+
+  publish-web-flasher:
+    needs: [display-host-tests, build, board-reader-tests]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    permissions:
+      actions: read
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml
+    with:
+      build_run_id: ${{ format('{0}', github.run_id) }}

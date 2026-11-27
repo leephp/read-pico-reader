@@ -7,11 +7,12 @@ from html.parser import HTMLParser
 from pathlib import Path
 import shutil
 import json
+import hashlib
 import re
 import sys
 from urllib.parse import urlparse
 
-from verify_flash_bundle import ARCHIVE_VERSION, check, check_archived_releases
+from verify_flash_bundle import ARCHIVE_VERSION, EXPECTED, check, check_archived_releases
 from release_assets import hydrate
 from metalio_release_assets import stage_metalio
 
@@ -31,7 +32,64 @@ class LocalLinks(HTMLParser):
                 self.links.append(value)
 
 
-def stage(output: Path, ota_origin: str | None = None) -> None:
+def stage_web_package(output: Path, package: Path, source_commit: str, build_date: str) -> None:
+    """Expose the CI-built QDSX package in the web picker without changing the OTA feed."""
+    board = json.loads((ROOT / "boards/pico/board.json").read_text())
+    version = board["version"]
+    manifest = json.loads((package / "manifest.json").read_text())
+    if not (re.fullmatch(ARCHIVE_VERSION, version) and "-qdsx-v" in version
+            and manifest["version"] == version and manifest["board"] == "pico"
+            and manifest["project"] == board["project"] and re.fullmatch(r"[0-9a-f]{40}", source_commit)):
+        raise ValueError("Pico USB build identity does not match the checked-out board")
+    if len(manifest["builds"]) != 1 or manifest["builds"][0]["chipFamily"] != "ESP32-S3":
+        raise ValueError("Unexpected web flasher target")
+    parts = manifest["builds"][0]["parts"]
+    if len(parts) != len(EXPECTED) or {p["path"] for p in parts} != set(EXPECTED):
+        raise ValueError("Incomplete Pico USB flash plan")
+    files = {}
+    for part in parts:
+        name = part["path"]
+        data = (package / name).read_bytes()
+        start, end = EXPECTED[name]
+        digest = hashlib.sha256(data).hexdigest()
+        if not (part["offset"] == start and 0 < len(data) <= end - start
+                and part["size"] == len(data) and part["sha256"] == digest):
+            raise ValueError(f"Invalid CI flash part: {name}")
+        if name == "firmware.bin" and data[48:80].split(b"\0")[0] != version.encode():
+            raise ValueError("Embedded firmware version differs from board configuration")
+        files[name] = {"size": len(data), "sha256": digest}
+
+    catalog_path = output / "releases.json"
+    catalog = json.loads(catalog_path.read_text())
+    releases = catalog["releases"]
+    existing = next((item for item in releases if item["version"] == version), None)
+    if existing:
+        # Checked-in versions have immutable bytes, including when CI rebuilds the same version.
+        releases.remove(existing)
+        releases.insert(0, existing)
+    else:
+        relative = Path("releases") / version / "manifest.json"
+        directory = (output / relative).parent
+        directory.mkdir(parents=True, exist_ok=False)
+        binary = f"Pico-update-{version}.bin"
+        for part in parts:
+            name = part["path"]
+            if name == "firmware.bin":
+                shutil.copy2(package / name, output / binary)
+                part["path"] = "../../" + binary
+            else:
+                shutil.copy2(package / name, directory / name)
+        manifest.update(new_install_prompt_erase=True, updated_at=build_date,
+                        pico_ota={"layout": "pico-dual-4m-v1", "base_version": version, "rollback": True})
+        (output / relative).write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+        releases.insert(0, {"version": version, "display_name": "厂长魔改版 · qdsx-" + version.split("-qdsx-")[1],
+                            "manifest": relative.as_posix(), "bin": binary, "files": files,
+                            "source_commit": source_commit})
+    catalog_path.write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n")
+
+
+def stage(output: Path, ota_origin: str | None = None, *, web_package: Path | None = None,
+          source_commit: str = "", build_date: str = "") -> None:
     output.mkdir(parents=True, exist_ok=True)
     for name in ("index.html", "notices.html", "manual.html", "site.css", "site.js", "installer-bridge.js", "flasher-integrity.js", "metalio-installer.js", "metalio-flash-core.js", "metalio-connection.js", "metalio-flash-reader.js", "metalio-transport.js", "metalio-native-stub.js", "_headers",
                  "manifest.json", "toc-preview.png", "firmware.bin",
@@ -124,6 +182,8 @@ def stage(output: Path, ota_origin: str | None = None) -> None:
     assert origin in ('https://kiikoread.com', 'https://wegooo-cell.github.io/read-pico-reader')
     feed['url'] = origin + '/' + f'Pico-update-{version}.bin'
     (output / 'update.json').write_text(json.dumps(feed, ensure_ascii=False, indent=2) + '\n')
+    if web_package is not None:
+        stage_web_package(output, web_package, source_commit, build_date)
     check(output)
     files = list(output.rglob("*"))
     count = sum(path.is_file() for path in files)
@@ -136,5 +196,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('output', nargs='?', type=Path, default=ROOT / '_site')
     parser.add_argument('--ota-origin', choices=['https://kiikoread.com', 'https://wegooo-cell.github.io/read-pico-reader'])
+    parser.add_argument('--web-package', type=Path)
+    parser.add_argument('--source-commit', default='')
+    parser.add_argument('--build-date', default='')
     args = parser.parse_args()
-    stage(args.output, args.ota_origin)
+    stage(args.output, args.ota_origin, web_package=args.web_package,
+          source_commit=args.source_commit, build_date=args.build_date)
