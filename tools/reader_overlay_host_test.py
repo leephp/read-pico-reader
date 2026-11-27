@@ -9,6 +9,7 @@ from home_cover_cache_host_test import function
 root = Path(__file__).resolve().parents[1]
 book = root / 'main/apps/app_book.c'
 unit = r'''
+#define _POSIX_C_SOURCE 200809L
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>

@@ -17,8 +17,9 @@ STUB = r'''
 #include <stdlib.h>
 #include <assert.h>
 typedef int esp_err_t;
-static bool book_cover_jobs_quiesce(unsigned ms){assert(ms==2000);return true;}
-static bool ui_avatar_quiesce(unsigned ms){assert(ms==2000);return true;}
+static bool cover_busy,avatar_busy;
+static bool book_cover_jobs_quiesce(unsigned ms){assert(ms==0);return !cover_busy;}
+static bool ui_avatar_quiesce(unsigned ms){assert(ms==0);return !avatar_busy;}
 static void book_lock_collage_invalidate(void){}
 #define ESP_OK 0
 #define ESP_FAIL -1
@@ -127,6 +128,9 @@ int main(void){
     assert(phy_restores==1&&detaches==detach_before);
     pad=pullup=false;usb_storage_phy_init();assert(pad&&pullup&&phy_restores==1);
     usb_storage_serial_resume();assert(pad&&pullup&&detaches==detach_before+1);
+    cover_busy=true;assert(usb_storage_start()==ESP_ERR_NOT_FINISHED);stopped();
+    cover_busy=false;avatar_busy=true;assert(usb_storage_start()==ESP_ERR_NOT_FINISHED);stopped();
+    avatar_busy=false;
     assert(usb_storage_start()==ESP_OK);detach_before=detaches;
     usb_storage_phy_init();usb_storage_serial_resume();assert(!s_serial_phy&&!pad&&!pullup&&detaches==detach_before);
     assert(usb_storage_stop()==ESP_OK);stopped();
