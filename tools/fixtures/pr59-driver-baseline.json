@@ -189,17 +189,16 @@
       "reason": "2026-11-22 user requests confirmed shutdown-path fixes and timestamp alignment: preserve opt9 OP flags; report/retain failed shutdown, bounded idle retry and PMIC recovery before restart; command phase timestamps, no waveform/voltage/pin sequencing change. Local only, no flash/publication/push."
     },
     "main/display.c": {
-      "sha256": "de0026909c52f1daa723fd645e50a1a182535ac16c671347b9d4813db8e2467b",
-      "reason": "2026-11-22 user requests confirmed shutdown-path fixes and timestamp alignment: preserve opt9 OP flags; report/retain failed shutdown, bounded idle retry and PMIC recovery before restart; command phase timestamps, no waveform/voltage/pin sequencing change. Local only, no flash/publication/push."
+      "sha256": "7c3bfed2834ba69aeb076093a7f6626f5de36dc3330a67eddb61abf8ecf87a0c",
+      "reason": "76765d3: Pico reader settle and scan-time input capture."
     },
     "main/display_main_waveform.c": {
       "sha256": "56b119c03ecef23dcdfabe36e9fe6e67e08ad53ce383123fd1e240aea0ec261f",
       "reason": "2026-11-21: Pico-only source promotion and removal of inactive S31 branches; archived at s31-final-2026-11-21."
     },
     "main/display_reader_waveform.c": {
-      "sha256": "fba604e2a2419b3c1af284f9df1a1e818331ea88a44532d236adb182f44a045c",
-      "reason": "2026-11-22 explicit user approval: periodic GC16 retains native48 then appends target-white12/target-black4; midgrays hold. Ordinary/manual/native waveforms unchanged.",
-      "previous_sha256": "206d6fef9b9134b13ba2cc706e20cdfea4610f102502c4eb344615c242cc3689"
+      "sha256": "7aa03d304c0b1ae8f60eb1d508877544d9cf81899a7dba31f7b843039bc2bf88",
+      "reason": "76765d3: Pico reader settle and scan-time input capture."
     },
     "main/sleep.c": {
       "sha256": "ca234d3ec1d4c66ada968a7f4e6261a0c0c698e082ca7c12c9efb79b6308582d",
@@ -275,8 +274,8 @@
       "reason": "2026-11-21: Pico-only source promotion and removal of inactive S31 branches; archived at s31-final-2026-11-21."
     },
     "components/epdiy/src/highlevel.c": {
-      "sha256": "399f528f19175429b29a6566e6b3a990abea8a51db1859818a12a251f4de9880",
-      "reason": "2026-11-21: Pico-only source promotion and removal of inactive S31 branches; archived at s31-final-2026-11-21."
+      "sha256": "dbfca71b577b193911fb0a3ea5c9c9a00b3f72af80ab72fcb26e5e60acbf69f3",
+      "reason": "76765d3: Pico reader settle and scan-time input capture."
     },
     "components/epdiy/src/output_common/line_queue.c": {
       "sha256": "3fdb60681eaf6775a8ad72ac36165647fe4295a462fd80cb77a6dae0f2a29ea4",
@@ -303,8 +302,8 @@
       "reason": "2026-11-21: Pico-only source promotion and removal of inactive S31 branches; archived at s31-final-2026-11-21."
     },
     "components/read_pico/include/read_pico_sd.h": {
-      "sha256": "9481ef39ca38251becf4c0b5e8aaacb7dc74d8d22af860599ed7129d3d5a6f97",
-      "reason": "2026-11-21: Pico-only source promotion and removal of inactive S31 branches; archived at s31-final-2026-11-21."
+      "sha256": "85fad7eb72351a5b021719a8366e2f1a66a1a169d0bbecd1ca5fa4aa1521a1de",
+      "reason": "5e10ab4: Guard SD operations while an asynchronous directory listing is active."
     },
     "components/read_pico_pmu/CMakeLists.txt": {
       "sha256": "edea611555c6917be6d313610e930014eaad73b9ab1e17b23e6e292dbef06f28",
@@ -331,16 +330,16 @@
       "reason": "2026-11-21: Pico-only source promotion and removal of inactive S31 branches; archived at s31-final-2026-11-21."
     },
     "main/display.h": {
-      "sha256": "dfb40db111f0a93feacb2b9e6aff2766b4e8b88f9c1bc0d9afc658b0b35ba42b",
-      "reason": "2026-11-21: Pico-only source promotion and removal of inactive S31 branches; archived at s31-final-2026-11-21."
+      "sha256": "dd2790d5f4fcba081da99ababd182cf5f5642b409c7af1b937b933144bf4edf5",
+      "reason": "76765d3: Pico reader settle and scan-time input capture."
     },
     "main/display_main_waveform.h": {
       "sha256": "89cd38af432290151cc9c5c2a5e3b99f0316ff4414a896f3dd29440171a93905",
       "reason": "2026-11-21: Pico-only source promotion and removal of inactive S31 branches; archived at s31-final-2026-11-21."
     },
     "main/display_reader_waveform.h": {
-      "sha256": "5b24f193b699f39c4a816ba1ec78a331a4d0b930f1ad30890ee74e44e7ee50ca",
-      "reason": "2026-11-22 explicit user approval: periodic GC16 retains native48 then appends target-white12/target-black4; midgrays hold. Ordinary/manual/native waveforms unchanged."
+      "sha256": "f641f01beb88835540ad95a1c9bdebf892d0d54534ed966d1d0d6744add892da",
+      "reason": "76765d3: Pico reader settle and scan-time input capture."
     },
     "main/sleep.h": {
       "sha256": "469ac62e0fb0ee9895181c9690b453e2c13d9ed545408ad02abaa7ceb49c6e7c",
@@ -353,6 +352,10 @@
     "components/sy7636a/include/sy7636a.h": {
       "sha256": "e9483f849eccd0d97500bcae6efc960befeb8f5c3e8f610203df53d22b12ecea",
       "reason": "2026-11-22 user requests confirmed shutdown-path fixes and timestamp alignment: preserve opt9 OP flags; report/retain failed shutdown, bounded idle retry and PMIC recovery before restart; command phase timestamps, no waveform/voltage/pin sequencing change. Local only, no flash/publication/push."
+    },
+    "components/read_pico/read_pico_sd.c": {
+      "sha256": "365728c309316932ca08f866281837008fe60f44cc12b0344c2fffd14ab17ddb",
+      "reason": "5e10ab4: Guard SD operations while an asynchronous directory listing is active."
     }
   },
   "source_archive": "s31-final-2026-11-21"

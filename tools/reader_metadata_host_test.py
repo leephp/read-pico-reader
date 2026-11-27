@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 source = ROOT/'main/apps/app_book.c'
 separate_footer = 'static bool present_reader_footer(' in source.read_text()
 unit = r'''
+#define _POSIX_C_SOURCE 200809L
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
