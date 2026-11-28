@@ -1,8 +1,21 @@
 const legacyDraw=draw, core=['home','shelf','files','settings','reader','contents','type'];
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const button=(s,a,cl='row')=>'<button class="'+cl+'" data-act="'+esc(a)+'">'+s+'</button>';
+const actionIcons = {
+ 'stats:all':'chart-column', 'stats:book':'chart-column', quickWifi:'wifi', quickBt:'bluetooth',
+ refreshNow:'refresh-cw', lock:'lock', 'edit:search':'search', 'edit:folder':'folder',
+ 'dest:copy':'copy', 'dest:move':'folder-input', 'ask:delFile':'trash', dirOpen:'folder-open',
+ rescan:'refresh-cw', dir:'folder', dirOps:'folder', file:'file'
+};
+function button(s,a,cl='row') {
+ const [action, target] = a.split(':');
+ const icon = action==='open' ? routeIcons[target] : actionIcons[a] || actionIcons[action];
+ if (icon && (cl==='row' || cl==='chip')) {
+   s = s.startsWith('<b>') ? s.replace(/<b>(.*?)<\/b>/, (_, label)=>'<b>'+iconLabel(icon,label)+'</b>') : iconLabel(icon,s);
+ }
+ return '<button class="'+cl+'" data-act="'+esc(a)+'">'+s+'</button>';
+}
 const link=(s,v,end='›')=>button('<b>'+s+'</b><span>'+end+'</span>','open:'+v);
-const choice=(k,arr)=>'<div class="subnav">'+arr.map(x=>button(esc(x),'set:'+k+':'+x,pref[k]===x?'chosen chip':'chip')).join('')+'</div>';
+const choice=(k,arr)=>'<div class="subnav value-choices">'+arr.map(x=>button(esc(x),'set:'+k+':'+x,pref[k]===x?'chosen chip':'chip')).join('')+'</div>';
 const section=(s,html)=>'<div class="group">'+s+'</div>'+html;
 const hint=s=>'<p class="help">'+s+'</p>';
 const title=s=>'<h1>'+s+'</h1>';
